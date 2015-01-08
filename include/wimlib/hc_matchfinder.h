@@ -183,72 +183,23 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 	if (unlikely(best_len >= max_len))
 		goto out;
 
+
 	/* Search the appropriate linked list for matches.  */
 
-	if (!(matchfinder_node_valid(cur_node)))
-		goto out;
-
-	if (best_len < 3) {
-		for (;;) {
-			/* No length 3 match found yet.
-			 * Check the first 3 bytes.  */
-			matchptr = &in_begin[cur_node];
-
-			if (load_u24_unaligned(matchptr) == first_3_bytes)
-				break;
-
-			/* The first 3 bytes did not match.  Keep trying.  */
-			cur_node = mf->next_tab[cur_node];
-			if (!matchfinder_node_valid(cur_node) || !--depth_remaining)
-				goto out;
-		}
-
-		/* Found a match of length >= 3.  Extend it to its full length.  */
-		best_matchptr = matchptr;
-		best_len = lz_extend(in_next, best_matchptr, 3, max_len);
-		if (best_len >= nice_len)
-			goto out;
-		cur_node = mf->next_tab[cur_node];
-		if (!matchfinder_node_valid(cur_node) || !--depth_remaining)
-			goto out;
-	}
-
 	for (;;) {
-		for (;;) {
-			matchptr = &in_begin[cur_node];
-
-			/* Already found a length 3 match.  Try for a longer match;
-			 * start by checking the last 2 bytes and the first 4 bytes.  */
-		#if UNALIGNED_ACCESS_IS_FAST
-			if ((load_u32_unaligned(matchptr + best_len - 3) ==
-			     load_u32_unaligned(in_next + best_len - 3)) &&
-			    (load_u32_unaligned(matchptr) ==
-			     load_u32_unaligned(in_next)))
-		#else
-			if (matchptr[best_len] == in_next[best_len])
-		#endif
-				break;
-
-			cur_node = mf->next_tab[cur_node];
-			if (!matchfinder_node_valid(cur_node) || !--depth_remaining)
-				goto out;
-		}
-
-	#if UNALIGNED_ACCESS_IS_FAST
-		len = 4;
-	#else
-		len = 0;
-	#endif
-		len = lz_extend(in_next, matchptr, len, max_len);
-		if (len > best_len) {
-			best_len = len;
-			best_matchptr = matchptr;
-			if (best_len >= nice_len)
-				goto out;
+		if (!matchfinder_node_valid(cur_node) || !depth_remaining--)
+			break;
+		matchptr = &in_begin[cur_node];
+		if (matchptr[best_len] == in_next[best_len]) {
+			len = lz_extend(in_next, matchptr, 0, max_len);
+			if (len > best_len) {
+				best_len = len;
+				best_matchptr = matchptr;
+				if (best_len >= nice_len)
+					break;
+			}
 		}
 		cur_node = mf->next_tab[cur_node];
-		if (!matchfinder_node_valid(cur_node) || !--depth_remaining)
-			goto out;
 	}
 out:
 	*offset_ret = in_next - best_matchptr;
