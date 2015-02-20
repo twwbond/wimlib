@@ -16,6 +16,7 @@
 #endif
 
 #include <limits.h>
+#include <string.h>
 
 #include "wimlib/divsufsort.h"
 #include "wimlib/lcpit_matchfinder.h"
@@ -167,37 +168,39 @@ build_LCPIT(u32 intervals[restrict], u32 pos_data[restrict], const u32 n)
 	for (u32 r = 1; r < n; r++) {
 		const u32 next_pos = SA_and_LCP[r] & POS_MASK;
 		const u32 next_lcp = SA_and_LCP[r] >> LCP_SHIFT;
-		const u32 top_lcp = *top >> LCP_SHIFT;
+		const u32 top_lcp = intervals[*top] >> LCP_SHIFT;
 
 		if (next_lcp == top_lcp) {
 			/* Continuing the deepest open interval  */
 			pos_data[prev_pos] = *top;
 		} else if (next_lcp > top_lcp) {
 			/* Opening a new interval  */
-			*++top = (next_lcp << LCP_SHIFT) | next_interval_idx++;
-			pos_data[prev_pos] = *top;
+			intervals[next_interval_idx] = next_lcp << LCP_SHIFT;
+			pos_data[prev_pos] = next_interval_idx;
+			*++top = next_interval_idx++;
 		} else {
 			/* Closing the deepest open interval  */
 			pos_data[prev_pos] = *top;
 			for (;;) {
-				const u32 closed_interval_idx = *top-- & POS_MASK;
-				const u32 superinterval_lcp = *top >> LCP_SHIFT;
+				const u32 closed_interval_idx = *top--;
+				const u32 superinterval_lcp = intervals[*top] >> LCP_SHIFT;
 
 				if (next_lcp == superinterval_lcp) {
 					/* Continuing the superinterval */
-					intervals[closed_interval_idx] = *top;
+					intervals[closed_interval_idx] |= *top;
 					break;
 				} else if (next_lcp > superinterval_lcp) {
 					/* Creating a new interval that is a
 					 * superinterval of the one being
 					 * closed, but still a subinterval of
 					 * its superinterval  */
-					*++top = (next_lcp << LCP_SHIFT) | next_interval_idx++;
-					intervals[closed_interval_idx] = *top;
+					intervals[next_interval_idx] = next_lcp << LCP_SHIFT;
+					intervals[closed_interval_idx] |= next_interval_idx;
+					*++top = next_interval_idx++;
 					break;
 				} else {
 					/* Also closing the superinterval  */
-					intervals[closed_interval_idx] = *top;
+					intervals[closed_interval_idx] |= *top;
 				}
 			}
 		}
@@ -207,7 +210,7 @@ build_LCPIT(u32 intervals[restrict], u32 pos_data[restrict], const u32 n)
 	/* Close any still-open intervals.  */
 	pos_data[prev_pos] = *top;
 	for (; top > open_intervals; top--)
-		intervals[*top & POS_MASK] = *(top - 1);
+		intervals[*top] |= *(top - 1);
 }
 
 /*
@@ -275,63 +278,33 @@ static inline u32
 lcpit_advance_one_byte(const u32 cur_pos,
 		       u32 pos_data[restrict],
 		       u32 intervals[restrict],
+		       u32 latest_pos[restrict],
 		       struct lz_match matches[restrict],
 		       const bool record_matches)
 {
 	u32 lcp;
 	u32 interval_idx;
-	u32 match_pos;
 	struct lz_match *matchptr;
+	u32 cur_match;
+	u32 prev_match = 0;
 
-	/* Get the deepest lcp-interval containing the current suffix. */
-	lcp = pos_data[cur_pos] >> LCP_SHIFT;
-	interval_idx = pos_data[cur_pos] & POS_MASK;
-	prefetch(&intervals[pos_data[cur_pos + 1] & POS_MASK]);
-	pos_data[cur_pos] = 0;
-
-	/* Ascend until we reach a visited interval, linking the unvisited
-	 * intervals to the current suffix as we go.  */
-	while (intervals[interval_idx] & LCP_MASK) {
-		const u32 superinterval_lcp = intervals[interval_idx] >> LCP_SHIFT;
-		const u32 superinterval_idx = intervals[interval_idx] & POS_MASK;
-		intervals[interval_idx] = cur_pos;
-		lcp = superinterval_lcp;
-		interval_idx = superinterval_idx;
-	}
-
-	match_pos = intervals[interval_idx] & POS_MASK;
-	if (match_pos == 0) {
-		/* Ambiguous case; just don't allow matches with position 0. */
-		if (interval_idx != 0)
-			intervals[interval_idx] = cur_pos;
-		return 0;
-	}
+	interval_idx = pos_data[cur_pos];
 	matchptr = matches;
-	/* Ascend indirectly via pos_data[] links.  */
 	for (;;) {
-		u32 next_lcp;
-		u32 next_interval_idx;
-
-		for (;;) {
-			next_lcp = pos_data[match_pos] >> LCP_SHIFT;
-			next_interval_idx = pos_data[match_pos] & POS_MASK;
-			if (next_lcp < lcp)
-				break;
-			/* Suffix was out of date.  */
-			match_pos = intervals[next_interval_idx];
-		}
-		intervals[interval_idx] = cur_pos;
-		pos_data[match_pos] = (lcp << LCP_SHIFT) | interval_idx;
-		if (record_matches) {
-			matchptr->length = lcp;
-			matchptr->offset = cur_pos - match_pos;
-			matchptr++;
-		}
-		if (next_interval_idx == 0)
+		lcp = intervals[interval_idx] >> LCP_SHIFT;
+		if (lcp == 0)
 			break;
-		match_pos = intervals[next_interval_idx];
-		interval_idx = next_interval_idx;
-		lcp = next_lcp;
+		cur_match = latest_pos[interval_idx];
+		if (cur_match != prev_match) {
+			prev_match = cur_match;
+			if (record_matches) {
+				matchptr->length = lcp;
+				matchptr->offset = cur_pos - cur_match;
+				matchptr++;
+			}
+		}
+		latest_pos[interval_idx] = cur_pos;
+		interval_idx = intervals[interval_idx] & POS_MASK;
 	}
 	return matchptr - matches;
 }
@@ -535,7 +508,8 @@ get_intervals_size(size_t max_bufsize)
 u64
 lcpit_matchfinder_get_needed_memory(size_t max_bufsize)
 {
-	return get_pos_data_size(max_bufsize) + get_intervals_size(max_bufsize);
+	return get_pos_data_size(max_bufsize) + get_intervals_size(max_bufsize) +
+			((u64)max_bufsize * sizeof(u32));
 }
 
 /*
@@ -559,7 +533,8 @@ lcpit_matchfinder_init(struct lcpit_matchfinder *mf, size_t max_bufsize,
 
 	mf->pos_data = MALLOC(get_pos_data_size(max_bufsize));
 	mf->intervals = MALLOC(get_intervals_size(max_bufsize));
-	if (!mf->pos_data || !mf->intervals) {
+	mf->latest_pos = MALLOC(max_bufsize * sizeof(u32));
+	if (!mf->pos_data || !mf->intervals || !mf->latest_pos) {
 		lcpit_matchfinder_destroy(mf);
 		return false;
 	}
@@ -649,6 +624,7 @@ lcpit_matchfinder_load_buffer(struct lcpit_matchfinder *mf, const u8 *T, u32 n)
 		build_LCPIT_huge(mf->intervals64, mf->pos_data, n);
 		mf->huge_mode = true;
 	}
+	memset(mf->latest_pos, 0, n * sizeof(u32));
 	mf->cur_pos = 0; /* starting at beginning of input buffer  */
 }
 
@@ -670,7 +646,8 @@ lcpit_matchfinder_get_matches(struct lcpit_matchfinder *mf,
 						   mf->intervals64, matches, true);
 	else
 		return lcpit_advance_one_byte(mf->cur_pos++, mf->pos_data,
-					      mf->intervals, matches, true);
+					      mf->intervals, mf->latest_pos,
+					      matches, true);
 }
 
 /*
@@ -688,7 +665,8 @@ lcpit_matchfinder_skip_bytes(struct lcpit_matchfinder *mf, u32 count)
 	} else {
 		do {
 			lcpit_advance_one_byte(mf->cur_pos++, mf->pos_data,
-					       mf->intervals, NULL, false);
+					       mf->intervals, mf->latest_pos,
+					       NULL, false);
 		} while (--count);
 	}
 }
@@ -702,4 +680,5 @@ lcpit_matchfinder_destroy(struct lcpit_matchfinder *mf)
 {
 	FREE(mf->pos_data);
 	FREE(mf->intervals);
+	FREE(mf->latest_pos);
 }

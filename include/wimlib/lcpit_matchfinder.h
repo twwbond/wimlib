@@ -24,6 +24,7 @@ struct lcpit_matchfinder {
 		u32 *intervals;
 		u64 *intervals64;
 	};
+	u32 *latest_pos;
 	u32 min_match_len;
 	u32 nice_match_len;
 };
