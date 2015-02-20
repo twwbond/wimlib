@@ -289,18 +289,22 @@ lcpit_advance_one_byte(const u32 cur_pos,
 	u32 prev_match = 0;
 
 	interval_idx = pos_data[cur_pos];
+	prefetch(&intervals[pos_data[cur_pos+1]]);
+	prefetch(&latest_pos[pos_data[cur_pos+1]]);
 	matchptr = matches;
 	for (;;) {
 		lcp = intervals[interval_idx] >> LCP_SHIFT;
 		if (lcp == 0)
 			break;
-		cur_match = latest_pos[interval_idx];
-		if (cur_match != prev_match) {
-			prev_match = cur_match;
-			if (record_matches) {
-				matchptr->length = lcp;
-				matchptr->offset = cur_pos - cur_match;
-				matchptr++;
+		if (record_matches) {
+			cur_match = latest_pos[interval_idx];
+			if (cur_match != prev_match) {
+				prev_match = cur_match;
+				if (record_matches) {
+					matchptr->length = lcp;
+					matchptr->offset = cur_pos - cur_match;
+					matchptr++;
+				}
 			}
 		}
 		latest_pos[interval_idx] = cur_pos;
