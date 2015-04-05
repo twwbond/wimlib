@@ -210,7 +210,7 @@ struct wim_inode {
 			 * hard links or not.  */
 			struct list_head i_extraction_aliases;
 
-		#ifdef WITH_NTFS_3G
+		#if defined(WITH_NTFS_3G) || defined(__WIN32__)
 			/* In NTFS-3g extraction mode, this is set to the Master
 			 * File Table (MFT) number of the NTFS file that was
 			 * created for this inode.  */

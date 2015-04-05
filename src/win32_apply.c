@@ -137,6 +137,8 @@ struct win32_apply_ctx {
 	/* Have we tried to enable short name support on the target volume yet?
 	 */
 	bool tried_to_enable_short_names;
+
+	bool can_open_by_inode_number;
 };
 
 /* Get the drive letter from a Windows path, or return the null character if the
@@ -846,6 +848,8 @@ prepare_target(struct list_head *dentry_list, struct win32_apply_ctx *ctx)
 	if (!ctx->print_buffer)
 		return WIMLIB_ERR_NOMEM;
 
+	ctx->can_open_by_inode_number = true;
+
 	return 0;
 }
 
@@ -1168,6 +1172,41 @@ do_create_file(PHANDLE FileHandle,
 				    0);
 }
 
+static NTSTATUS
+do_create_file_by_inode(const struct wim_inode *inode,
+			PHANDLE FileHandle,
+			ACCESS_MASK DesiredAccess,
+			PLARGE_INTEGER AllocationSize,
+			ULONG FileAttributes,
+			ULONG CreateDisposition,
+			ULONG CreateOptions,
+			struct win32_apply_ctx *ctx)
+{
+	UNICODE_STRING str;
+	NTSTATUS status;
+
+	if (ctx->can_open_by_inode_number) {
+		str.Buffer = (wchar_t *)&inode->i_mft_no;
+		str.Length = sizeof(inode->i_mft_no);
+		str.MaximumLength = str.Length;
+		CreateOptions |= FILE_OPEN_BY_FILE_ID;
+		ctx->attr.ObjectName = &str;
+	}
+
+	status = do_create_file(FileHandle,
+				DesiredAccess,
+				AllocationSize,
+				FileAttributes,
+				CreateDisposition,
+				CreateOptions,
+				ctx);
+
+	if (ctx->can_open_by_inode_number)
+		ctx->attr.ObjectName = &ctx->pathbuf;
+
+	return status;
+}
+
 /* Like do_create_file(), but builds the extraction path of the @dentry first.
  */
 static NTSTATUS
@@ -1340,6 +1379,24 @@ create_empty_named_data_streams(const struct wim_dentry *dentry,
 	return ret;
 }
 
+static void
+save_inode_number(struct wim_inode *inode, HANDLE h, struct win32_apply_ctx *ctx)
+{
+	if (!ctx->can_open_by_inode_number)
+		return;
+
+	NTSTATUS status;
+	FILE_INTERNAL_INFORMATION info;
+
+	status = (*func_NtQueryInformationFile)(h, &ctx->iosb,
+						&info, sizeof(info),
+						FileInternalInformation);
+	if (NT_SUCCESS(status))
+		inode->i_mft_no = info.IndexNumber.QuadPart;
+	else
+		inode->i_mft_no = 0;
+}
+
 /*
  * Creates the directory named by @dentry, or uses an existing directory at that
  * location.  If necessary, sets the short name and/or fixes compression and
@@ -1392,6 +1449,10 @@ create_directory(const struct wim_dentry *dentry, struct win32_apply_ctx *ctx)
 	}
 
 	ret = adjust_compression_attribute(h, dentry, ctx);
+	if (ret)
+		goto out;
+
+	save_inode_number(dentry->d_inode, h, ctx);
 out:
 	(*func_NtClose)(h);
 	return ret;
@@ -1463,6 +1524,8 @@ create_nondirectory_inode(HANDLE *h_ret, const struct wim_dentry *dentry,
 	ret = create_empty_named_data_streams(dentry, ctx);
 	if (ret)
 		goto out_close;
+
+	save_inode_number(dentry->d_inode, h, ctx);
 
 	*h_ret = h;
 	return 0;
@@ -1699,14 +1762,14 @@ begin_extract_blob_instance(const struct blob_descriptor *blob,
 		build_extraction_path(dentry, ctx);
 	}
 
-
 	/* Open a new handle  */
-	status = do_create_file(&h,
-				FILE_WRITE_DATA | SYNCHRONIZE,
-				NULL, 0, FILE_OPEN_IF,
-				FILE_SEQUENTIAL_ONLY |
-					FILE_SYNCHRONOUS_IO_NONALERT,
-				ctx);
+	status = do_create_file_by_inode(dentry->d_inode,
+					 &h,
+					 FILE_WRITE_DATA | SYNCHRONIZE,
+					 NULL, 0, FILE_OPEN_IF,
+					 FILE_SEQUENTIAL_ONLY |
+						FILE_SYNCHRONOUS_IO_NONALERT,
+					 ctx);
 	if (!NT_SUCCESS(status)) {
 		winnt_error(status, L"Can't open \"%ls\" for writing",
 			    current_path(ctx));
@@ -2368,8 +2431,10 @@ apply_metadata_to_file(const struct wim_dentry *dentry,
 	build_extraction_path(dentry, ctx);
 
 	/* Open a handle with as many relevant permissions as possible.  */
-	while (!NT_SUCCESS(status = do_create_file(&h, perms, NULL,
-						   0, FILE_OPEN, 0, ctx)))
+	while (!NT_SUCCESS(status =
+			   do_create_file_by_inode(dentry->d_inode, &h,
+						   perms, NULL, 0,
+						   FILE_OPEN, 0, ctx)))
 	{
 		if (status == STATUS_PRIVILEGE_NOT_HELD ||
 		    status == STATUS_ACCESS_DENIED)
