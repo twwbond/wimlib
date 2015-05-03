@@ -51,6 +51,8 @@ printable_path(const wchar_t *full_path)
 	return full_path + 4;
 }
 
+static HANDLE source_handle;
+
 /*
  * If cur_dir is not NULL, open an existing file relative to the already-open
  * directory cur_dir.
@@ -102,6 +104,33 @@ retry:
 	return status;
 }
 
+static NTSTATUS
+winnt_open_by_inode(HANDLE volume_handle, u64 ino, DWORD perms, HANDLE *h_ret)
+{
+	UNICODE_STRING name;
+	OBJECT_ATTRIBUTES attr;
+	IO_STATUS_BLOCK iosb;
+
+	name.Length = sizeof(ino);
+	name.MaximumLength = sizeof(ino);
+	name.Buffer = (wchar_t *)&ino;
+
+	attr.Length = sizeof(attr);
+	attr.RootDirectory = volume_handle;
+	attr.ObjectName = &name;
+	attr.Attributes = 0;
+	attr.SecurityDescriptor = NULL;
+	attr.SecurityQualityOfService = NULL;
+
+	return (*func_NtOpenFile)(h_ret, perms, &attr, &iosb,
+				    FILE_SHARE_VALID_FLAGS,
+				    FILE_OPEN_REPARSE_POINT |
+					    FILE_OPEN_FOR_BACKUP_INTENT |
+					    FILE_SYNCHRONOUS_IO_NONALERT |
+					    FILE_SEQUENTIAL_ONLY |
+					    FILE_OPEN_BY_FILE_ID);
+}
+
 /* Read the first @size bytes from the file, or named data stream of a file,
  * described by @blob.  */
 int
@@ -118,8 +147,15 @@ read_winnt_stream_prefix(const struct blob_descriptor *blob, u64 size,
 	/* This is an NT namespace path.  */
 	path = blob->file_on_disk;
 
-	status = winnt_openat(NULL, path, wcslen(path),
-			      FILE_READ_DATA | SYNCHRONIZE, &h);
+	if (path_stream_name(path) || blob->mft_no == 0) {
+		status = winnt_openat(NULL, path, wcslen(path),
+				      FILE_READ_DATA | SYNCHRONIZE, &h);
+	} else {
+		status = winnt_open_by_inode(source_handle,
+					     blob->mft_no,
+					     FILE_READ_DATA | SYNCHRONIZE,
+					     &h);
+	}
 	if (!NT_SUCCESS(status)) {
 		winnt_error(status, L"\"%ls\": Can't open for reading",
 			    printable_path(path));
@@ -1127,6 +1163,8 @@ set_sort_key(struct wim_inode *inode, u64 sort_key)
 		if (blob && (blob->blob_location == BLOB_IN_WINNT_FILE_ON_DISK ||
 			     blob->blob_location == BLOB_WIN32_ENCRYPTED))
 			blob->sort_key = sort_key;
+		if (blob && blob->blob_location == BLOB_IN_WINNT_FILE_ON_DISK)
+			blob->mft_no = inode->i_ino;
 	}
 }
 
@@ -1168,6 +1206,9 @@ retry_open:
 			      (cur_dir ? filename_nchars : full_path_nchars),
 			      requestedPerms,
 			      &h);
+	if (source_handle == NULL)
+		source_handle = h;
+
 	if (unlikely(!NT_SUCCESS(status))) {
 		if (status == STATUS_DELETE_PENDING) {
 			WARNING("\"%ls\": Deletion pending; skipping file",
@@ -1454,7 +1495,7 @@ out_progress:
 	else
 		ret = do_capture_progress(params, WIMLIB_SCAN_DENTRY_EXCLUDED, NULL);
 out:
-	if (likely(h))
+	if (likely(h) && h != source_handle)
 		(*func_NtClose)(h);
 	if (unlikely(ret)) {
 		free_dentry_tree(root, params->blob_table);

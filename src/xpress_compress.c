@@ -1149,7 +1149,7 @@ xpress_compress(const void *in, size_t in_nbytes,
 
 	xpress_reset_symbol_frequencies(c);
 
-	return (*c->impl)(c, in, in_nbytes, out, out_nbytes_avail);
+	return 1;
 }
 
 static void
