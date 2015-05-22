@@ -827,30 +827,34 @@ static int
 winnt_scan_efsrpc_raw_data(struct wim_inode *inode, const wchar_t *nt_path,
 			   struct list_head *unhashed_blobs)
 {
-	struct blob_descriptor *blob;
-	struct wim_inode_stream *strm;
 	int ret;
+	u64 size;
+	struct blob_descriptor *blob = NULL;
+	struct wim_inode_stream *strm;
 
-	blob = new_blob_descriptor();
-	if (!blob)
-		goto err_nomem;
-
-	blob->file_on_disk = WCSDUP(nt_path);
-	if (!blob->file_on_disk)
-		goto err_nomem;
-	blob->blob_location = BLOB_WIN32_ENCRYPTED;
-
-	/* OpenEncryptedFileRaw() expects a Win32 name.  */
-	wimlib_assert(!wmemcmp(blob->file_on_disk, L"\\??\\", 4));
-	blob->file_on_disk[1] = L'\\';
-
-	blob->file_inode = inode;
-
-	ret = win32_get_encrypted_file_size(blob->file_on_disk,
+	ret = win32_get_encrypted_file_size(nt_path,
 					    (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY),
-					    &blob->size);
+					    &size);
 	if (ret)
 		goto err;
+
+	if (size) {
+		blob = new_blob_descriptor();
+		if (unlikely(!blob))
+			goto err_nomem;
+
+		blob->file_on_disk = WCSDUP(nt_path);
+		if (unlikely(!blob->file_on_disk))
+			goto err_nomem;
+
+		blob->blob_location = BLOB_WIN32_ENCRYPTED;
+		blob->size = size;
+		blob->file_inode = inode;
+
+		/* OpenEncryptedFileRaw() expects a Win32 name.  */
+		wimlib_assert(!wmemcmp(blob->file_on_disk, L"\\??\\", 4));
+		blob->file_on_disk[1] = L'\\';
+	}
 
 	strm = inode_add_stream(inode, STREAM_TYPE_EFSRPC_RAW_DATA,
 				NO_STREAM_NAME, blob);
