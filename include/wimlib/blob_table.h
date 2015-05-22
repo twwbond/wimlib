@@ -74,7 +74,7 @@ struct blob_descriptor {
 	/* List node for a hash bucket of the blob table  */
 	struct hlist_node hash_list;
 
-	/* Uncompressed size of this blob  */
+	/* Uncompressed size of this blob.  Ordinarily this cannot be 0.  */
 	u64 size;
 
 	union {
