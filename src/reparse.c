@@ -30,11 +30,11 @@
 #include "wimlib/blob_table.h"
 #include "wimlib/compiler.h"
 #include "wimlib/endianness.h"
-#include "wimlib/encoding.h"
 #include "wimlib/error.h"
 #include "wimlib/inode.h"
 #include "wimlib/reparse.h"
 #include "wimlib/resource.h"
+#include "wimlib/unicode.h"
 
 /*
  * Read the data from a symbolic link, junction, or mount point reparse point
@@ -357,9 +357,8 @@ wim_inode_readlink(const struct wim_inode * restrict inode,
 	if (parse_reparse_data((const u8*)&rpbuf_disk, rpbuflen, &rpdata))
 		return -EINVAL;
 
-	ret = utf16le_to_tstr(rpdata.substitute_name,
-			      rpdata.substitute_name_nbytes,
-			      &link_target, &link_target_len);
+	ret = utf16le_get_tstr(rpdata.substitute_name, &link_target,
+			       &link_target_len, UCS_STRICT);
 	if (ret)
 		return -errno;
 
@@ -399,7 +398,7 @@ out_have_link:
 	}
 	memcpy(buf, translated_target, link_target_len);
 out_free_link_target:
-	FREE(link_target);
+	utf16le_put_tstr(link_target);
 	return ret;
 }
 
@@ -422,8 +421,8 @@ wim_inode_set_symlink(struct wim_inode *inode, const char *target,
 	DEBUG("Creating reparse point data buffer for UNIX "
 	      "symlink target \"%s\"", target);
 	memset(&rpdata, 0, sizeof(rpdata));
-	ret = tstr_to_utf16le(target, strlen(target),
-			      &name_utf16le, &name_utf16le_nbytes);
+	ret = tstr_get_utf16le(target, &name_utf16le,
+			       &name_utf16le_nbytes, UCS_STRICT);
 	if (ret)
 		goto out;
 
@@ -515,7 +514,7 @@ wim_inode_set_symlink(struct wim_inode *inode, const char *target,
 
 	ret = 0;
 out_free_name:
-	FREE(name_utf16le);
+	tstr_put_utf16le(name_utf16le);
 out:
 	return ret;
 }

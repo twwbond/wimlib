@@ -9,11 +9,24 @@ Version 1.8.1:
 	The output of the 'wiminfo' command now consolidates various boolean
 	flags (such as "Relative path junction") into a single line.
 
+	The way the "file count", "directory count", "total bytes", and "hard
+	link bytes" image statistics (stored in the WIM XML data) is calculated
+	has been slightly changed.
+
+	The '--enable-verify-compression' configure option has been removed.  If
+	you want to verify a WIM file, use the 'wimverify' program.
+
 	A file can now have both an unnamed data stream ("file contents") and a
 	reparse point stream.  Such files can exist as a result of the use of
 	certain Windows features, such as offline storage, including "OneDrive".
 	wimlib will now store and restore both streams on Windows as well as in
 	NTFS-3g mode.  Microsoft's WIMGAPI also has this behavior.
+
+	In mounted WIM images, the disk usage provided for each file (st_blocks)
+	is now the compressed size rather than the uncompressed size.
+
+	On UNIX-like systems, symbolic links whose targets contain the backslash
+	character are now handled correctly (losslessly).
 
 	On Windows, named data streams of encrypted files are no longer stored
 	twice in WIM archives.
@@ -27,22 +40,6 @@ Version 1.8.1:
 	On Windows, when doing an extraction in "WIMBoot mode", files larger
 	than 4 gigabytes are now never extracted as externally backed.  This
 	works around a bug in Microsoft's "WOF" driver.
-
-	The '--enable-verify-compression' configure option has been removed.  If
-	you want to verify a WIM file, use the 'wimverify' program.
-
-	The way the "file count", "directory count", "total bytes", and "hard
-	link bytes" image statistics (stored in the WIM XML data) is calculated
-	has been slightly changed.
-
-	In mounted WIM images, the disk usage provided for each file (st_blocks)
-	is now the compressed size rather than the uncompressed size.
-
-	The performance of the NTFS-3g and Windows capture modes has been
-	slightly improved.
-
-	On UNIX-like systems, symbolic links whose targets contain the backslash
-	character are now handled correctly (losslessly).
 
 Version 1.8.0:
 	Improved the LZX compressor.  It is now 15-20% faster than before and

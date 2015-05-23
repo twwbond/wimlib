@@ -48,7 +48,6 @@
 #include "wimlib/assert.h"
 #include "wimlib/blob_table.h"
 #include "wimlib/dentry.h"
-#include "wimlib/encoding.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/metadata.h"
@@ -57,6 +56,7 @@
 #include "wimlib/reparse.h"
 #include "wimlib/resource.h"
 #include "wimlib/security.h"
+#include "wimlib/unicode.h"
 #include "wimlib/unix_data.h"
 #include "wimlib/wildcard.h"
 #include "wimlib/wim.h"
@@ -782,42 +782,46 @@ dentry_calculate_extraction_name(struct wim_dentry *dentry,
 		}
 	}
 
-	if (file_name_valid(dentry->file_name, dentry->file_name_nbytes / 2, false)) {
-		ret = utf16le_get_tstr(dentry->file_name,
-				       dentry->file_name_nbytes,
-				       (const tchar **)&dentry->d_extraction_name,
-				       &dentry->d_extraction_name_nchars);
-		dentry->d_extraction_name_nchars /= sizeof(tchar);
-		return ret;
+	if (!file_name_valid(dentry->file_name, dentry->file_name_nbytes / 2, false))
+		goto invalid_filename;
+
+	ret = utf16le_get_tstr(dentry->file_name,
+			       (char **)&dentry->d_extraction_name,
+			       &dentry->d_extraction_name_nchars,
+			       UCS_STRICT);
+	if (ret == WIMLIB_ERR_INVALID_UTF16_STRING)
+		goto invalid_filename;
+	dentry->d_extraction_name_nchars /= sizeof(tchar);
+	return ret;
+
+invalid_filename:
+	if (ctx->extract_flags & WIMLIB_EXTRACT_FLAG_REPLACE_INVALID_FILENAMES)
+	{
+		WARNING("\"%"TS"\" has an invalid filename "
+			"that is not supported on this platform; "
+			"extracting dummy name instead",
+			dentry_full_path(dentry));
+		goto out_replace;
 	} else {
-		if (ctx->extract_flags & WIMLIB_EXTRACT_FLAG_REPLACE_INVALID_FILENAMES)
-		{
-			WARNING("\"%"TS"\" has an invalid filename "
-				"that is not supported on this platform; "
-				"extracting dummy name instead",
-				dentry_full_path(dentry));
-			goto out_replace;
-		} else {
-			WARNING("Not extracting \"%"TS"\": has an invalid filename "
-				"that is not supported on this platform",
-				dentry_full_path(dentry));
-			goto skip_dentry;
-		}
+		WARNING("Not extracting \"%"TS"\": has an invalid filename "
+			"that is not supported on this platform",
+			dentry_full_path(dentry));
+		goto skip_dentry;
 	}
 
 out_replace:
 	{
-		utf16lechar utf16_name_copy[dentry->file_name_nbytes / 2];
+		utf16lechar utf16_name_copy[dentry->file_name_nbytes / 2 + 1];
 
 		memcpy(utf16_name_copy, dentry->file_name, dentry->file_name_nbytes);
 		file_name_valid(utf16_name_copy, dentry->file_name_nbytes / 2, true);
+		utf16_name_copy[dentry->file_name_nbytes / 2] = 0;
 
-		const tchar *tchar_name;
+		tchar *tchar_name;
 		size_t tchar_nchars;
 
-		ret = utf16le_get_tstr(utf16_name_copy,
-				       dentry->file_name_nbytes,
-				       &tchar_name, &tchar_nchars);
+		ret = utf16le_get_tstr(utf16_name_copy, &tchar_name,
+				       &tchar_nchars, UCS_REPLACE);
 		if (ret)
 			return ret;
 

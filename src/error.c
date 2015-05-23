@@ -207,9 +207,6 @@ static const tchar * const error_strings[] = {
 		= T("An error was returned by fuse_main()"),
 	[WIMLIB_ERR_GLOB_HAD_NO_MATCHES]
 		= T("The provided file glob did not match any files"),
-	[WIMLIB_ERR_ICONV_NOT_AVAILABLE]
-		= T("The iconv() function does not seem to work. "
-		  "Maybe check to make sure the directory /usr/lib/gconv exists"),
 	[WIMLIB_ERR_IMAGE_COUNT]
 		= T("Inconsistent image count among the metadata "
 			"resources, the WIM header, and/or the XML data"),

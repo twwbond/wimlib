@@ -33,11 +33,11 @@
 #include "wimlib/blob_table.h"
 #include "wimlib/capture.h"
 #include "wimlib/dentry.h"
-#include "wimlib/encoding.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/paths.h"
 #include "wimlib/reparse.h"
+#include "wimlib/unicode.h"
 
 struct winnt_scan_stats {
 	unsigned long num_get_sd_access_denied;

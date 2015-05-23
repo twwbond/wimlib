@@ -30,10 +30,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "wimlib/encoding.h"
 #include "wimlib/error.h"
 #include "wimlib/file_io.h"
 #include "wimlib/textfile.h"
+#include "wimlib/unicode.h"
 #include "wimlib/util.h"
 
 static int
@@ -42,6 +42,7 @@ read_file_contents(const tchar *path, void **buf_ret, size_t *bufsize_ret)
 	int raw_fd;
 	struct filedes fd;
 	struct stat st;
+	off_t size;
 	void *buf;
 	int ret;
 	int errno_save;
@@ -59,8 +60,8 @@ read_file_contents(const tchar *path, void **buf_ret, size_t *bufsize_ret)
 		close(raw_fd);
 		return WIMLIB_ERR_STAT;
 	}
-	if ((size_t)st.st_size != st.st_size ||
-	    (buf = MALLOC(st.st_size)) == NULL)
+	size = st.st_size;
+	if ((size_t)size != size || (buf = MALLOC(size + 3)) == NULL)
 	{
 		close(raw_fd);
 		ERROR("Not enough memory to read \"%"TS"\"", path);
@@ -68,7 +69,7 @@ read_file_contents(const tchar *path, void **buf_ret, size_t *bufsize_ret)
 	}
 
 	filedes_init(&fd, raw_fd);
-	ret = full_read(&fd, buf, st.st_size);
+	ret = full_read(&fd, buf, size);
 	errno_save = errno;
 	filedes_close(&fd);
 	errno = errno_save;
@@ -79,7 +80,7 @@ read_file_contents(const tchar *path, void **buf_ret, size_t *bufsize_ret)
 	}
 
 	*buf_ret = buf;
-	*bufsize_ret = st.st_size;
+	*bufsize_ret = size;
 	return 0;
 }
 
@@ -125,12 +126,10 @@ translate_text_buffer(const u8 *buf_raw, size_t bufsize_raw,
 
 	if (utf8) {
 		ret = utf8_to_tstr((const char *)(buf_raw + offset_raw),
-				   bufsize_raw - offset_raw,
-				   &buf_tstr, &bufsize_tstr);
+				   &buf_tstr, &bufsize_tstr, UCS_STRICT);
 	} else {
 		ret = utf16le_to_tstr((const utf16lechar *)(buf_raw + offset_raw),
-				      bufsize_raw - offset_raw,
-				      &buf_tstr, &bufsize_tstr);
+				      &buf_tstr, &bufsize_tstr, UCS_STRICT);
 	}
 	if (ret)
 		return ret;
@@ -325,6 +324,9 @@ do_load_text_file(const tchar *path,
 		ret = read_file_contents(path, (void **)&buf, &bufsize);
 		if (ret)
 			return ret;
+		((char *)buf)[bufsize + 0] = 0;
+		((char *)buf)[bufsize + 1] = 0;
+		((char *)buf)[bufsize + 2] = 0;
 	}
 
 	ret = translate_text_buffer(buf, bufsize, &tstr, &tstr_nchars);

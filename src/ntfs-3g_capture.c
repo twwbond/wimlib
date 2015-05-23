@@ -40,13 +40,13 @@
 #include "wimlib/blob_table.h"
 #include "wimlib/capture.h"
 #include "wimlib/dentry.h"
-#include "wimlib/encoding.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/ntfs_3g.h"
 #include "wimlib/paths.h"
 #include "wimlib/reparse.h"
 #include "wimlib/security.h"
+#include "wimlib/unicode.h"
 
 /* A reference-counted NTFS volume than is automatically unmounted when the
  * reference count reaches 0  */
@@ -562,8 +562,7 @@ wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 		if (ret != 0 || name_type == FILE_NAME_DOS)
 			goto out;
 	}
-	ret = utf16le_to_tstr(name, name_nbytes,
-			      &mbs_name, &mbs_name_nbytes);
+	ret = utf16le_get_tstr(name, &mbs_name, &mbs_name_nbytes, UCS_STRICT);
 	if (ret)
 		goto out;
 
@@ -604,7 +603,7 @@ wim_ntfs_capture_filldir(void *dirent, const ntfschar *name,
 		dentry_add_child(ctx->parent, child);
 	ntfs_inode_close(ni);
 out_free_mbs_name:
-	FREE(mbs_name);
+	utf16le_put_tstr(mbs_name);
 out:
 	ctx->path[ctx->path_len] = '\0';
 	ctx->ret = ret;

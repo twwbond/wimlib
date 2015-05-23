@@ -58,12 +58,12 @@
 #include "wimlib/blob_table.h"
 #include "wimlib/capture.h"
 #include "wimlib/dentry.h"
-#include "wimlib/encoding.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/metadata.h"
 #include "wimlib/paths.h"
 #include "wimlib/progress.h"
+#include "wimlib/unicode.h"
 #include "wimlib/xml.h"
 
 /* Saved specification of a "primitive" update operation that was performed.  */
@@ -412,9 +412,8 @@ journaled_change_name(struct update_command_journal *j,
 	struct update_primitive prim;
 
 	/* Set the long name.  */
-	ret = tstr_to_utf16le(new_name_tstr,
-			      tstrlen(new_name_tstr) * sizeof(tchar),
-			      &new_name, &new_name_nbytes);
+	ret = tstr_to_utf16le(new_name_tstr, &new_name,
+			      &new_name_nbytes, UCS_STRICT);
 	if (ret)
 		return ret;
 
@@ -679,13 +678,13 @@ attach_branch(struct wim_dentry *branch, const tchar *target_tstr,
 	      wimlib_progress_func_t progfunc, void *progctx)
 {
 	int ret;
-	const utf16lechar *target;
+	utf16lechar *target;
 
 	ret = 0;
 	if (unlikely(!branch))
 		goto out;
 
-	ret = tstr_get_utf16le(target_tstr, &target);
+	ret = tstr_get_utf16le(target_tstr, &target, NULL, UCS_STRICT);
 	if (ret)
 		goto out_free_branch;
 
@@ -1003,7 +1002,7 @@ rename_wim_path(WIMStruct *wim, const tchar *from, const tchar *to,
 		if (journaled_unlink(j, src))
 			return -ENOMEM;
 		if (journaled_change_name(j, src, path_basename(to)))
-			return -ENOMEM;
+			return -errno;
 		if (journaled_link(j, src, parent_of_dst))
 			return -ENOMEM;
 	} else {
@@ -1054,6 +1053,13 @@ execute_rename_command(struct update_command_journal *j,
 			break;
 		case EISDIR:
 			ret = WIMLIB_ERR_IS_DIRECTORY;
+			break;
+		case EILSEQ:
+		#if TCHAR_IS_UTF16LE
+			ret = WIMLIB_ERR_INVALID_UTF16_STRING;
+		#else
+			ret = WIMLIB_ERR_INVALID_UTF8_STRING;
+		#endif
 			break;
 		case ENOENT:
 		default:

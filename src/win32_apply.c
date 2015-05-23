@@ -32,12 +32,12 @@
 #include "wimlib/blob_table.h"
 #include "wimlib/capture.h" /* for mangle_pat() and match_pattern_list()  */
 #include "wimlib/dentry.h"
-#include "wimlib/encoding.h"
 #include "wimlib/error.h"
 #include "wimlib/metadata.h"
 #include "wimlib/paths.h"
 #include "wimlib/reparse.h"
 #include "wimlib/textfile.h"
+#include "wimlib/unicode.h"
 #include "wimlib/xml.h"
 #include "wimlib/wildcard.h"
 #include "wimlib/wimboot.h"

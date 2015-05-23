@@ -47,7 +47,6 @@ libwim_la_SOURCES =		\
 	src/delete_image.c	\
 	src/dentry.c		\
 	src/divsufsort.c	\
-	src/encoding.c		\
 	src/error.c		\
 	src/export_image.c	\
 	src/extract.c		\
@@ -82,6 +81,7 @@ libwim_la_SOURCES =		\
 	src/template.c		\
 	src/textfile.c		\
 	src/timestamp.c		\
+	src/unicode.c		\
 	src/update_image.c	\
 	src/util.c		\
 	src/verify.c		\
@@ -109,7 +109,6 @@ libwim_la_SOURCES =		\
 	include/wimlib/decompress_common.h	\
 	include/wimlib/dentry.h		\
 	include/wimlib/divsufsort.h	\
-	include/wimlib/encoding.h	\
 	include/wimlib/endianness.h	\
 	include/wimlib/error.h		\
 	include/wimlib/file_io.h	\
@@ -145,6 +144,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/timestamp.h	\
 	include/wimlib/types.h		\
 	include/wimlib/unaligned.h	\
+	include/wimlib/unicode.h	\
 	include/wimlib/unix_data.h	\
 	include/wimlib/util.h		\
 	include/wimlib/wildcard.h	\
@@ -187,7 +187,6 @@ libwim_la_LDFLAGS = $(AM_LDFLAGS) -version-info 21:0:6
 libwim_la_LIBADD =		\
 	$(PTHREAD_LIBS)		\
 	$(LIBXML2_LIBS)		\
-	$(LTLIBICONV)		\
 	$(LIBNTFS_3G_LIBS)	\
 	$(LIBFUSE_LIBS)		\
 	$(LIBRT_LIBS)		\

@@ -35,13 +35,13 @@
 
 #include "wimlib/assert.h"
 #include "wimlib/blob_table.h"
-#include "wimlib/encoding.h"
 #include "wimlib/endianness.h"
 #include "wimlib/error.h"
 #include "wimlib/metadata.h"
 #include "wimlib/ntfs_3g.h"
 #include "wimlib/resource.h"
 #include "wimlib/unaligned.h"
+#include "wimlib/unicode.h"
 #include "wimlib/util.h"
 #include "wimlib/write.h"
 

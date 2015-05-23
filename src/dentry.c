@@ -63,10 +63,10 @@
 #include "wimlib/assert.h"
 #include "wimlib/dentry.h"
 #include "wimlib/inode.h"
-#include "wimlib/encoding.h"
 #include "wimlib/endianness.h"
 #include "wimlib/metadata.h"
 #include "wimlib/paths.h"
+#include "wimlib/unicode.h"
 
 /* On-disk format of a WIM dentry (directory entry), located in the metadata
  * resource for a WIM image.  */
@@ -307,8 +307,8 @@ dentry_set_name(struct wim_dentry *dentry, const tchar *name)
 	int ret;
 
 	if (name && *name) {
-		ret = tstr_to_utf16le(name, tstrlen(name) * sizeof(tchar),
-				      &name_utf16le, &name_utf16le_nbytes);
+		ret = tstr_to_utf16le(name, &name_utf16le,
+				      &name_utf16le_nbytes, UCS_STRICT);
 		if (ret)
 			return ret;
 	}
@@ -484,11 +484,12 @@ for_dentry_in_tree_depth(struct wim_dentry *root,
  * Calculate the full path to @dentry within the WIM image, if not already done.
  *
  * The full name will be saved in the cached value 'dentry->_full_path'.
+ * Invalid Unicode characters will be replaced.
  *
  * Whenever possible, use dentry_full_path() instead of calling this and
  * accessing _full_path directly.
  *
- * Returns 0 or an error code resulting from a failed string conversion.
+ * Returns 0 or WIMLIB_ERR_NOMEM.
  */
 int
 calculate_dentry_full_path(struct wim_dentry *dentry)
@@ -508,8 +509,9 @@ calculate_dentry_full_path(struct wim_dentry *dentry)
 		d = d->d_parent;  /* assumes d == d->d_parent for root  */
 	} while (!dentry_is_root(d));
 
-	utf16lechar ubuf[ulen];
+	utf16lechar ubuf[ulen + 1];
 	utf16lechar *p = &ubuf[ulen];
+	*p = 0;
 
 	d = dentry;
 	do {
@@ -521,8 +523,7 @@ calculate_dentry_full_path(struct wim_dentry *dentry)
 
 	wimlib_assert(p == ubuf);
 
-	return utf16le_to_tstr(ubuf, ulen * sizeof(utf16lechar),
-			       &dentry->_full_path, &dummy);
+	return utf16le_to_tstr(ubuf, &dentry->_full_path, NULL, UCS_REPLACE);
 }
 
 /*
@@ -736,12 +737,12 @@ get_dentry_child_with_name(const struct wim_dentry *dentry, const tchar *name,
 			   CASE_SENSITIVITY_TYPE case_type)
 {
 	int ret;
-	const utf16lechar *name_utf16le;
+	utf16lechar *name_utf16le;
 	size_t name_utf16le_nbytes;
 	struct wim_dentry *child;
 
-	ret = tstr_get_utf16le_and_len(name, &name_utf16le,
-				       &name_utf16le_nbytes);
+	ret = tstr_get_utf16le(name, &name_utf16le,
+			       &name_utf16le_nbytes, UCS_STRICT);
 	if (ret)
 		return NULL;
 
@@ -859,12 +860,10 @@ get_dentry_utf16le(WIMStruct *wim, const utf16lechar *path,
 struct wim_dentry *
 get_dentry(WIMStruct *wim, const tchar *path, CASE_SENSITIVITY_TYPE case_type)
 {
-	int ret;
-	const utf16lechar *path_utf16le;
+	utf16lechar *path_utf16le;
 	struct wim_dentry *dentry;
 
-	ret = tstr_get_utf16le(path, &path_utf16le);
-	if (ret)
+	if (tstr_get_utf16le(path, &path_utf16le, NULL, UCS_STRICT))
 		return NULL;
 	dentry = get_dentry_utf16le(wim, path_utf16le, case_type);
 	tstr_put_utf16le(path_utf16le);

@@ -28,10 +28,10 @@
 #include <ctype.h>
 
 #include "wimlib/dentry.h"
-#include "wimlib/encoding.h"
 #include "wimlib/error.h"
 #include "wimlib/metadata.h"
 #include "wimlib/paths.h"
+#include "wimlib/unicode.h"
 #include "wimlib/wildcard.h"
 
 struct match_dentry_ctx {
@@ -187,7 +187,7 @@ wildcard_status(const tchar *wildcard)
 static int
 match_dentry(struct wim_dentry *cur_dentry, struct match_dentry_ctx *ctx)
 {
-	const tchar *name;
+	tchar *name;
 	size_t name_nchars;
 	int ret;
 
@@ -195,8 +195,7 @@ match_dentry(struct wim_dentry *cur_dentry, struct match_dentry_ctx *ctx)
 		return 0;
 
 	ret = utf16le_get_tstr(cur_dentry->file_name,
-			       cur_dentry->file_name_nbytes,
-			       &name, &name_nchars);
+			       &name, &name_nchars, UCS_REPLACE);
 	if (ret)
 		return ret;
 	name_nchars /= sizeof(tchar);

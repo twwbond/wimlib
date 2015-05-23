@@ -36,12 +36,11 @@
 #include "wimlib/assert.h"
 #include "wimlib/blob_table.h"
 #include "wimlib/dentry.h"
-#include "wimlib/encoding.h"
 #include "wimlib/file_io.h"
 #include "wimlib/integrity.h"
 #include "wimlib/metadata.h"
-#include "wimlib/ntfs_3g.h" /* for libntfs3g_global_init() */
 #include "wimlib/security.h"
+#include "wimlib/unicode.h"
 #include "wimlib/wim.h"
 #include "wimlib/xml.h"
 #include "wimlib/win32.h"
@@ -162,7 +161,7 @@ wimlib_create_new_wim(enum wimlib_compression_type ctype, WIMStruct **wim_ret)
 	int ret;
 	WIMStruct *wim;
 
-	ret = wimlib_global_init(WIMLIB_INIT_FLAG_ASSUME_UTF8);
+	ret = wimlib_global_init(0);
 	if (ret)
 		return ret;
 
@@ -761,7 +760,7 @@ open_wim_as_WIMStruct(const void *wim_filename_or_fd, int open_flags,
 	WIMStruct *wim;
 	int ret;
 
-	ret = wimlib_global_init(WIMLIB_INIT_FLAG_ASSUME_UTF8);
+	ret = wimlib_global_init(0);
 	if (ret)
 		return ret;
 
@@ -899,21 +898,6 @@ wimlib_free(WIMStruct *wim)
 	FREE(wim);
 }
 
-static bool
-test_locale_ctype_utf8(void)
-{
-#ifdef __WIN32__
-	return false;
-#else
-	char *ctype = nl_langinfo(CODESET);
-
-	return (!strstr(ctype, "UTF-8") ||
-		!strstr(ctype, "UTF8") ||
-		!strstr(ctype, "utf8") ||
-		!strstr(ctype, "utf-8"));
-#endif
-}
-
 /* API function documented in wimlib.h  */
 WIMLIBAPI u32
 wimlib_get_version(void)
@@ -962,19 +946,11 @@ wimlib_global_init(int init_flags)
 		goto out_unlock;
 
 	libxml_global_init();
-	if (!(init_flags & WIMLIB_INIT_FLAG_ASSUME_UTF8)) {
-		wimlib_mbs_is_utf8 = test_locale_ctype_utf8();
-	#ifdef WITH_NTFS_3G
-		if (!wimlib_mbs_is_utf8)
-			libntfs3g_global_init();
-	#endif
-	}
 #ifdef __WIN32__
 	ret = win32_global_init(init_flags);
 	if (ret)
 		goto out_unlock;
 #endif
-	iconv_global_init();
 	init_upcase();
 	if (init_flags & WIMLIB_INIT_FLAG_DEFAULT_CASE_SENSITIVE)
 		default_ignore_case = false;
@@ -1001,7 +977,6 @@ wimlib_global_cleanup(void)
 		goto out_unlock;
 
 	libxml_global_cleanup();
-	iconv_global_cleanup();
 #ifdef __WIN32__
 	win32_global_cleanup();
 #endif

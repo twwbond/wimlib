@@ -29,11 +29,11 @@
 #include "wimlib.h"
 #include "wimlib/blob_table.h"
 #include "wimlib/dentry.h"
-#include "wimlib/encoding.h"
 #include "wimlib/metadata.h"
 #include "wimlib/paths.h"
 #include "wimlib/security.h"
 #include "wimlib/timestamp.h"
+#include "wimlib/unicode.h"
 #include "wimlib/unix_data.h"
 #include "wimlib/util.h"
 #include "wimlib/wim.h"
@@ -49,12 +49,9 @@ stream_to_wimlib_stream_entry(const struct wim_inode *inode,
 	const u8 *hash;
 
 	if (stream_is_named(strm)) {
-		size_t dummy;
-		int ret;
-
-		ret = utf16le_get_tstr(strm->stream_name,
-				       utf16le_len_bytes(strm->stream_name),
-				       &wstream->stream_name, &dummy);
+		int ret = utf16le_get_tstr(strm->stream_name,
+					   (tchar **)&wstream->stream_name,
+					   NULL, UCS_REPLACE);
 		if (ret)
 			return ret;
 	}
@@ -91,15 +88,21 @@ init_wimlib_dentry(struct wimlib_dir_entry *wdentry, struct wim_dentry *dentry,
 	const struct wim_inode_stream *strm;
 	struct wimlib_unix_data unix_data;
 
-	ret = utf16le_get_tstr(dentry->file_name, dentry->file_name_nbytes,
-			       &wdentry->filename, &dummy);
-	if (ret)
-		return ret;
+	if (dentry->file_name_nbytes) {
+		ret = utf16le_get_tstr(dentry->file_name,
+				       (tchar **)&wdentry->filename,
+				       NULL, UCS_REPLACE);
+		if (ret)
+			return ret;
+	}
 
-	ret = utf16le_get_tstr(dentry->short_name, dentry->short_name_nbytes,
-			       &wdentry->dos_name, &dummy);
-	if (ret)
-		return ret;
+	if (dentry->short_name_nbytes) {
+		ret = utf16le_get_tstr(dentry->short_name,
+				       (tchar **)&wdentry->dos_name,
+				       NULL, UCS_REPLACE);
+		if (ret)
+			return ret;
+	}
 
 	ret = calculate_dentry_full_path(dentry);
 	if (ret)
@@ -161,10 +164,10 @@ init_wimlib_dentry(struct wimlib_dir_entry *wdentry, struct wim_dentry *dentry,
 static void
 free_wimlib_dentry(struct wimlib_dir_entry *wdentry)
 {
-	utf16le_put_tstr(wdentry->filename);
-	utf16le_put_tstr(wdentry->dos_name);
+	utf16le_put_tstr((tchar *)wdentry->filename);
+	utf16le_put_tstr((tchar *)wdentry->dos_name);
 	for (unsigned i = 1; i <= wdentry->num_named_streams; i++)
-		utf16le_put_tstr(wdentry->streams[i].stream_name);
+		utf16le_put_tstr((tchar *)wdentry->streams[i].stream_name);
 	FREE(wdentry);
 }
 

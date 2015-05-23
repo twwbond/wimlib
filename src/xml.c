@@ -34,12 +34,12 @@
 #include "wimlib/assert.h"
 #include "wimlib/blob_table.h"
 #include "wimlib/dentry.h"
-#include "wimlib/encoding.h"
 #include "wimlib/error.h"
 #include "wimlib/file_io.h"
 #include "wimlib/metadata.h"
 #include "wimlib/resource.h"
 #include "wimlib/timestamp.h"
+#include "wimlib/unicode.h"
 #include "wimlib/xml.h"
 #include "wimlib/write.h"
 
@@ -214,6 +214,17 @@ get_arch(int arch)
 	}
 }
 
+static int
+xml_string_to_tstr(const xmlChar *in, tchar **out_ret)
+{
+	return utf8_to_tstr(in, out_ret, NULL, UCS_STRICT);
+}
+
+static int
+tstr_to_xml_string(const tchar *in, xmlChar **out_ret)
+{
+	return tstr_to_utf8(in, (char **)out_ret, NULL, UCS_STRICT);
+}
 
 /* Iterate through the children of an xmlNode. */
 #define for_node_child(parent, child)	\
@@ -275,7 +286,7 @@ node_get_string(const xmlNode *string_node, tchar **tstr_ret)
 
 	for_node_child(string_node, child)
 		if (node_is_text(child) && child->content)
-			return utf8_to_tstr_simple(child->content, tstr_ret);
+			return xml_string_to_tstr(child->content, tstr_ret);
 	return 0;
 }
 
@@ -701,8 +712,9 @@ xml_write_string(xmlTextWriter *writer, const char *name,
 		 const tchar *tstr)
 {
 	if (tstr) {
-		char *utf8_str;
-		int rc = tstr_to_utf8_simple(tstr, &utf8_str);
+		xmlChar *utf8_str;
+
+		int rc = tstr_to_xml_string(tstr, &utf8_str);
 		if (rc)
 			return rc;
 		rc = xmlTextWriterWriteElement(writer, name, utf8_str);

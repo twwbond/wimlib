@@ -2245,9 +2245,8 @@ typedef int (*wimlib_iterate_lookup_table_callback_t)(const struct wimlib_resour
 /** @addtogroup G_general
  * @{ */
 
-/** Assume that strings are represented in UTF-8, even if this is not the
- * locale's character encoding.  This flag is ignored on Windows, where wimlib
- * always uses UTF-16LE.  */
+/** Deprecated; no longer has any effect.  (As of v1.8.1, the library always
+ * assumes UTF-8 encoding on non-Windows.)  */
 #define WIMLIB_INIT_FLAG_ASSUME_UTF8			0x00000001
 
 /** Windows-only: do not attempt to acquire additional privileges (currently
@@ -2387,7 +2386,6 @@ enum wimlib_error_code {
 	WIMLIB_ERR_DECOMPRESSION                      = 2,
 	WIMLIB_ERR_FUSE                               = 6,
 	WIMLIB_ERR_GLOB_HAD_NO_MATCHES                = 8,
-	WIMLIB_ERR_ICONV_NOT_AVAILABLE                = 9,
 	WIMLIB_ERR_IMAGE_COUNT                        = 10,
 	WIMLIB_ERR_IMAGE_NAME_COLLISION               = 11,
 	WIMLIB_ERR_INSUFFICIENT_PRIVILEGES            = 12,
@@ -3178,9 +3176,8 @@ wimlib_get_xml_data(WIMStruct *wim, void **buf_ret, size_t *bufsize_ret);
  *
  * Initialization function for wimlib.  Call before using any other wimlib
  * function (except possibly wimlib_set_print_errors()).  If not done manually,
- * this function will be called automatically with @p init_flags set to
- * ::WIMLIB_INIT_FLAG_ASSUME_UTF8.  This function does nothing if called again
- * after it has already successfully run.
+ * this function will be called automatically the default flags.  This function
+ * does nothing if called again after it has already successfully run.
  *
  * @param init_flags
  *	Bitwise OR of flags prefixed with WIMLIB_INIT_FLAG.

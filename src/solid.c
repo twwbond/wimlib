@@ -27,12 +27,12 @@
 
 #include "wimlib/blob_table.h"
 #include "wimlib/dentry.h"
-#include "wimlib/encoding.h"
 #include "wimlib/endianness.h"
 #include "wimlib/metadata.h"
 #include "wimlib/paths.h"
 #include "wimlib/solid.h"
 #include "wimlib/unaligned.h"
+#include "wimlib/unicode.h"
 
 static const utf16lechar *
 get_extension(const utf16lechar *name, size_t nbytes)

@@ -33,10 +33,10 @@
 #include "wimlib/assert.h"
 #include "wimlib/blob_table.h"
 #include "wimlib/dentry.h"
-#include "wimlib/encoding.h"
 #include "wimlib/error.h"
 #include "wimlib/inode.h"
 #include "wimlib/timestamp.h"
+#include "wimlib/unicode.h"
 
 /*
  * The 'stream_name' field of unnamed streams always points to this array, which

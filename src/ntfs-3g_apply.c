@@ -41,13 +41,13 @@
 #include "wimlib/apply.h"
 #include "wimlib/blob_table.h"
 #include "wimlib/dentry.h"
-#include "wimlib/encoding.h"
 #include "wimlib/error.h"
 #include "wimlib/metadata.h"
 #include "wimlib/ntfs_3g.h"
 #include "wimlib/reparse.h"
 #include "wimlib/security.h"
 #include "wimlib/security_descriptor.h"
+#include "wimlib/unicode.h"
 
 static int
 ntfs_3g_get_supported_features(const char *target,
@@ -272,7 +272,7 @@ ntfs_3g_restore_dos_name(ntfs_inode *ni, ntfs_inode *dir_ni,
 			 struct wim_dentry *dentry, ntfs_volume *vol)
 {
 	int ret;
-	const char *dos_name;
+	char *dos_name;
 	size_t dos_name_nbytes;
 
 	/* Note: ntfs_set_ntfs_dos_name() closes both inodes (even if it fails).
@@ -280,8 +280,8 @@ ntfs_3g_restore_dos_name(ntfs_inode *ni, ntfs_inode *dir_ni,
 	 * UTF-16LE internally... which is annoying because we currently have
 	 * the UTF-16LE string but not the multibyte string.  */
 
-	ret = utf16le_get_tstr(dentry->short_name, dentry->short_name_nbytes,
-			       &dos_name, &dos_name_nbytes);
+	ret = utf16le_get_tstr(dentry->short_name, &dos_name,
+			       &dos_name_nbytes, UCS_STRICT);
 	if (ret)
 		goto out_close;
 
@@ -975,9 +975,3 @@ const struct apply_operations ntfs_3g_apply_ops = {
 	.context_size           = sizeof(struct ntfs_3g_apply_ctx),
 	.single_tree_only	= true,
 };
-
-void
-libntfs3g_global_init(void)
-{
-       ntfs_set_char_encoding(setlocale(LC_ALL, ""));
-}

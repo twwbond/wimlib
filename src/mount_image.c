@@ -57,12 +57,12 @@
 
 #include "wimlib/blob_table.h"
 #include "wimlib/dentry.h"
-#include "wimlib/encoding.h"
 #include "wimlib/metadata.h"
 #include "wimlib/paths.h"
 #include "wimlib/progress.h"
 #include "wimlib/reparse.h"
 #include "wimlib/timestamp.h"
+#include "wimlib/unicode.h"
 #include "wimlib/unix_data.h"
 #include "wimlib/write.h"
 #include "wimlib/xml.h"
@@ -360,9 +360,9 @@ inode_get_data_stream_tstr(const struct wim_inode *inode,
 	if (!stream_name || !*stream_name) {
 		strm = inode_get_unnamed_data_stream(inode);
 	} else {
-		const utf16lechar *uname;
+		utf16lechar *uname;
 
-		if (tstr_get_utf16le(stream_name, &uname))
+		if (tstr_get_utf16le(stream_name, &uname, NULL, UCS_STRICT))
 			return NULL;
 		strm = inode_get_stream(inode, STREAM_TYPE_DATA, uname);
 		tstr_put_utf16le(uname);
@@ -1458,21 +1458,21 @@ wimfs_listxattr(const char *path, char *list, size_t size)
 		if (!stream_is_named_data_stream(strm))
 			continue;
 
-		if (utf16le_to_tstr(strm->stream_name,
-				    utf16le_len_bytes(strm->stream_name),
-				    &stream_name_mbs,
-				    &stream_name_mbs_nbytes))
+		if (utf16le_get_tstr(strm->stream_name,
+				     &stream_name_mbs,
+				     &stream_name_mbs_nbytes,
+				     UCS_STRICT))
 			return -errno;
 
 		if (unlikely(INT_MAX - total_size < stream_name_mbs_nbytes + 6)) {
-			FREE(stream_name_mbs);
+			utf16le_put_tstr(stream_name_mbs);
 			return -EFBIG;
 		}
 
 		total_size += stream_name_mbs_nbytes + 6;
 		if (size) {
 			if (end - p < stream_name_mbs_nbytes + 6) {
-				FREE(stream_name_mbs);
+				utf16le_put_tstr(stream_name_mbs);
 				return -ERANGE;
 			}
 			p = mempcpy(p, "user.", 5);
@@ -1480,6 +1480,7 @@ wimfs_listxattr(const char *path, char *list, size_t size)
 			*p++ = '\0';
 		}
 		FREE(stream_name_mbs);
+		utf16le_put_tstr(stream_name_mbs);
 	}
 	return total_size;
 }
@@ -1513,7 +1514,7 @@ wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 		struct wim_inode_stream *existing_strm;
 		struct wim_inode_stream *new_strm;
 		char *p;
-		const utf16lechar *uname;
+		utf16lechar *uname;
 
 		/* Create a named data stream.  */
 
@@ -1528,7 +1529,7 @@ wimfs_mknod(const char *path, mode_t mode, dev_t rdev)
 		if (!inode)
 			return -errno;
 
-		if (tstr_get_utf16le(stream_name, &uname))
+		if (tstr_get_utf16le(stream_name, &uname, NULL, UCS_STRICT))
 			return -errno;
 
 		existing_strm = inode_get_stream(inode, STREAM_TYPE_DATA, uname);
@@ -1709,18 +1710,13 @@ wimfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 		return ret;
 
 	for_inode_child(child, inode) {
-		char *file_name_mbs;
-		size_t file_name_mbs_nbytes;
+		char *name;
 
-		ret = utf16le_to_tstr(child->file_name,
-				      child->file_name_nbytes,
-				      &file_name_mbs,
-				      &file_name_mbs_nbytes);
-		if (ret)
+		if (utf16le_get_tstr(child->file_name, &name, NULL, UCS_REPLACE))
 			return -errno;
 
-		ret = filler(buf, file_name_mbs, NULL, 0);
-		FREE(file_name_mbs);
+		ret = filler(buf, name, NULL, 0);
+		utf16le_put_tstr(name);
 		if (ret)
 			return ret;
 	}
@@ -1825,7 +1821,7 @@ wimfs_setxattr(const char *path, const char *name,
 	struct wimfs_context *ctx = wimfs_get_context();
 	struct wim_inode *inode;
 	struct wim_inode_stream *strm;
-	const utf16lechar *uname;
+	utf16lechar *uname;
 	int ret;
 
 	if (!strncmp(name, "wimfs.", 6)) {
@@ -1862,8 +1858,7 @@ wimfs_setxattr(const char *path, const char *name,
 	if (!inode)
 		return -errno;
 
-	ret = tstr_get_utf16le(name, &uname);
-	if (ret)
+	if (tstr_get_utf16le(name, &uname, NULL, UCS_STRICT))
 		return -errno;
 
 	strm = inode_get_stream(inode, STREAM_TYPE_DATA, uname);
@@ -2524,7 +2519,7 @@ wimlib_unmount_image_with_progress(const char *dir, int unmount_flags,
 	int mount_flags;
 	int ret;
 
-	ret = wimlib_global_init(WIMLIB_INIT_FLAG_ASSUME_UTF8);
+	ret = wimlib_global_init(0);
 	if (ret)
 		return ret;
 
