@@ -261,7 +261,7 @@ winnt_get_short_name(HANDLE h, struct wim_dentry *dentry)
  * Load the security descriptor of a file into the corresponding inode and the
  * WIM image's security descriptor set.
  */
-static NTSTATUS
+static noinline_for_stack NTSTATUS
 winnt_get_security_descriptor(HANDLE h, struct wim_inode *inode,
 			      struct wim_sd_set *sd_set,
 			      struct winnt_scan_stats *stats, int add_flags)
@@ -698,53 +698,56 @@ winnt_try_rpfix(struct reparse_buffer_disk *rpbuf, u16 *rpbuflen_p,
 	return RP_FIXED;
 }
 
-/*
- * Loads the reparse point buffer from a reparse point into memory, optionally
- * fixing the targets of absolute symbolic links and junction points to be
- * relative to the root of capture.
- *
- * @h:
- *	Open handle to the reparse point file.
- * @path:
- *	Path to the reparse point file.
- * @params:
- *	Capture parameters.  add_flags, capture_root_ino, capture_root_dev,
- *	progfunc, progctx, and progress are used.
- * @rpbuf:
- *	Buffer of length at least REPARSE_POINT_MAX_SIZE bytes into which the
- *	reparse point buffer will be loaded.
- * @rpbuflen_ret:
- *	On success, the length of the reparse point buffer in bytes is written
- *	to this location.
- *
- * On success, returns 0 or RP_FIXED.
- * On failure, returns a positive error code.
- */
-static int
-winnt_get_reparse_point(HANDLE h, const wchar_t *path,
-			struct capture_params *params,
-			struct reparse_buffer_disk *rpbuf, u16 *rpbuflen_ret)
+/* Load the reparse data of a file into the corresponding WIM inode.  If the
+ * reparse point is a symbolic link or junction with an absolute target and
+ * RPFIX mode is enabled, then also rewrite its target to be relative to the
+ * capture root.  */
+static noinline_for_stack int
+winnt_load_reparse_data(HANDLE h, struct wim_inode *inode,
+			const wchar_t *full_path, struct capture_params *params)
 {
+	struct reparse_buffer_disk rpbuf;
 	DWORD bytes_returned;
+	u16 rpbuflen;
+	int ret;
+
+	if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED) {
+		/* See comment above assign_stream_types_encrypted()  */
+		WARNING("Ignoring reparse data of encrypted file \"%ls\"",
+			printable_path(full_path));
+		return 0;
+	}
 
 	if (!DeviceIoControl(h, FSCTL_GET_REPARSE_POINT,
-			     NULL, 0, rpbuf, REPARSE_POINT_MAX_SIZE,
+			     NULL, 0, &rpbuf, REPARSE_POINT_MAX_SIZE,
 			     &bytes_returned, NULL))
 	{
 		win32_error(GetLastError(), L"\"%ls\": Can't get reparse point",
-			    printable_path(path));
-		return WIMLIB_ERR_READ;
+			    printable_path(full_path));
+		return WIMLIB_ERR_READLINK;
 	}
 
-	if (unlikely(bytes_returned < REPARSE_DATA_OFFSET)) {
-		ERROR("\"%ls\": Reparse point data is invalid",
-		      printable_path(path));
-		return WIMLIB_ERR_INVALID_REPARSE_DATA;
+	rpbuflen = bytes_returned;
+
+	wimlib_assert(rpbuflen >= REPARSE_DATA_OFFSET);
+
+	if (params->add_flags & WIMLIB_ADD_FLAG_RPFIX) {
+		ret = winnt_try_rpfix(&rpbuf, &rpbuflen, full_path, params);
+		if (ret == RP_FIXED)
+			inode->i_rp_flags &= ~WIM_RP_FLAG_NOT_FIXED;
+		else if (ret)
+			return ret;
 	}
 
-	*rpbuflen_ret = bytes_returned;
-	if (params->add_flags & WIMLIB_ADD_FLAG_RPFIX)
-		return winnt_try_rpfix(rpbuf, rpbuflen_ret, path, params);
+	inode->i_reparse_tag = le32_to_cpu(rpbuf.rptag);
+	if (!inode_add_stream_with_data(inode,
+					STREAM_TYPE_REPARSE_POINT,
+					NO_STREAM_NAME,
+					rpbuf.rpdata,
+					rpbuflen - REPARSE_DATA_OFFSET,
+					params->blob_table))
+		return WIMLIB_ERR_NOMEM;
+
 	return 0;
 }
 
@@ -960,13 +963,13 @@ err_nomem:
  *   and later, whereas the stream support in NtQueryInformationFile() was
  *   already present in Windows XP.
  */
-static int
+static noinline_for_stack int
 winnt_scan_data_streams(HANDLE h, const wchar_t *path, size_t path_nchars,
 			struct wim_inode *inode, struct list_head *unhashed_blobs,
 			u64 file_size, u32 vol_flags)
 {
 	int ret;
-	u8 _buf[1024] _aligned_attribute(8);
+	u8 _buf[4096] _aligned_attribute(8);
 	u8 *buf;
 	size_t bufsize;
 	IO_STATUS_BLOCK iosb;
@@ -1308,32 +1311,9 @@ retry_open:
 
 	/* If this is a reparse point, load the reparse data.  */
 	if (unlikely(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
-		if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED) {
-			/* See comment above assign_stream_types_encrypted()  */
-			WARNING("Ignoring reparse data of encrypted file \"%ls\"",
-				printable_path(full_path));
-		} else {
-			struct reparse_buffer_disk rpbuf;
-			u16 rpbuflen;
-
-			ret = winnt_get_reparse_point(h, full_path, params,
-						      &rpbuf, &rpbuflen);
-			if (ret == RP_FIXED)
-				inode->i_rp_flags &= ~WIM_RP_FLAG_NOT_FIXED;
-			else if (ret)
-				goto out;
-			inode->i_reparse_tag = le32_to_cpu(rpbuf.rptag);
-			if (!inode_add_stream_with_data(inode,
-							STREAM_TYPE_REPARSE_POINT,
-							NO_STREAM_NAME,
-							rpbuf.rpdata,
-							rpbuflen - REPARSE_DATA_OFFSET,
-							params->blob_table))
-			{
-				ret = WIMLIB_ERR_NOMEM;
-				goto out;
-			}
-		}
+		ret = winnt_load_reparse_data(h, inode, full_path, params);
+		if (ret)
+			goto out;
 	}
 
 	sort_key = get_sort_key(h);
