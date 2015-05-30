@@ -730,7 +730,8 @@ winnt_load_reparse_data(HANDLE h, struct wim_inode *inode,
 	rpbuflen = bytes_returned;
 
 	if (rpbuflen < REPARSE_DATA_OFFSET) {
-		ERROR(L"\"%ls\": reparse point buffer is too short");
+		ERROR(L"\"%ls\": reparse point buffer is too short",
+		      printable_path(full_path));
 		return WIMLIB_ERR_INVALID_REPARSE_DATA;
 	}
 
