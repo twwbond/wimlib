@@ -1384,18 +1384,7 @@ wim_res_hdr_to_desc(const struct wim_reshdr *reshdr, WIMStruct *wim,
 	}
 }
 
-/* Convert a stand-alone resource descriptor to a WIM resource header.  */
-void
-wim_res_desc_to_hdr(const struct wim_resource_descriptor *rdesc,
-		    struct wim_reshdr *reshdr)
-{
-	reshdr->offset_in_wim     = rdesc->offset_in_wim;
-	reshdr->size_in_wim       = rdesc->size_in_wim;
-	reshdr->flags             = rdesc->flags;
-	reshdr->uncompressed_size = rdesc->uncompressed_size;
-}
-
-/* Translates a WIM resource header from the on-disk format into an in-memory
+/* Convert a WIM resource header from the on-disk format into an in-memory
  * format.  */
 void
 get_wim_reshdr(const struct wim_reshdr_disk *disk_reshdr,
