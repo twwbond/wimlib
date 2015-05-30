@@ -77,8 +77,8 @@ struct blob_descriptor {
 	/*
 	 * Uncompressed size of this blob.
 	 *
-	 * In most cases we are now enforcing that this is nonzero; i.e. empty
-	 * streams will have "no blob" rather than "an empty blob".  The
+	 * In most cases we are now enforcing that this is nonzero.  Consquently
+	 * an empty stream will have "no blob" rather than "an empty blob".  The
 	 * exceptions are:
 	 *
 	 *	- blob descriptors with 'blob_location == BLOB_NONEXISTENT',
