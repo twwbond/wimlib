@@ -101,7 +101,7 @@ wimlib_add_empty_image(WIMStruct *wim, const tchar *name, int *new_idx_ret)
 	if (ret)
 		return ret;
 
-	ret = xml_add_image(wim, name);
+	ret = xml_add_image(wim, name, wim->hdr.image_count);
 	if (ret) {
 		put_image_metadata(wim->image_metadata[--wim->hdr.image_count],
 				   NULL);
