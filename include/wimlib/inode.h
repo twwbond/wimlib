@@ -279,6 +279,11 @@ new_inode(struct wim_dentry *dentry, bool set_timestamps);
 #define inode_first_full_path(inode) \
 	dentry_full_path(inode_first_dentry(inode))
 
+#define inode_for_each_stream(strm, inode)			\
+	for (strm = &inode->i_streams[0];			\
+	     strm != &inode->i_streams[inode->i_num_streams];	\
+	     strm++)
+
 extern void
 d_associate(struct wim_dentry *dentry, struct wim_inode *inode);
 

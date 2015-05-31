@@ -58,11 +58,12 @@ inode_export_blobs(struct wim_inode *inode, struct blob_table *src_blob_table,
 	unsigned i;
 	const u8 *hash;
 	struct blob_descriptor *src_blob, *dest_blob;
+	const struct wim_inode_stream *strm;
 
-	for (i = 0; i < inode->i_num_streams; i++) {
+	inode_for_each_stream(strm, inode) {
 
 		/* Retrieve SHA-1 message digest of blob to export.  */
-		hash = stream_hash(&inode->i_streams[i]);
+		hash = stream_hash(strm);
 		if (is_zero_hash(hash))  /* Empty stream?  */
 			continue;
 
@@ -73,8 +74,7 @@ inode_export_blobs(struct wim_inode *inode, struct blob_table *src_blob_table,
 			/* Blob not yet present in destination WIM.  Search for
 			 * it in the source WIM, then export it into the
 			 * destination WIM.  */
-			src_blob = stream_blob(&inode->i_streams[i],
-					       src_blob_table);
+			src_blob = stream_blob(strm, src_blob_table);
 			if (!src_blob)
 				return blob_not_found_error(inode, hash);
 

@@ -53,6 +53,8 @@ inode_metadata_consistent(const struct wim_inode *inode,
 			  const struct blob_table *blob_table,
 			  const struct blob_table *template_blob_table)
 {
+	const struct wim_inode_stream *strm, *template_strm;
+
 	/* Must have exact same creation time and last write time.  */
 	if (inode->i_creation_time != template_inode->i_creation_time ||
 	    inode->i_last_write_time != template_inode->i_last_write_time)
@@ -64,10 +66,7 @@ inode_metadata_consistent(const struct wim_inode *inode,
 		return false;
 
 	/* All stream sizes must match.  */
-	for (unsigned i = 0; i < inode->i_num_streams; i++) {
-		const struct wim_inode_stream *strm, *template_strm;
-
-		strm = &inode->i_streams[i];
+	inode_for_each_stream(strm, inode) {
 		template_strm = inode_get_stream(template_inode,
 						 strm->stream_type,
 						 strm->stream_name);
@@ -93,11 +92,11 @@ inode_copy_checksums(struct wim_inode *inode,
 		     struct blob_table *blob_table,
 		     struct blob_table *template_blob_table)
 {
-	for (unsigned i = 0; i < inode->i_num_streams; i++) {
-		const struct wim_inode_stream *strm, *template_strm;
+	struct wim_inode_stream *strm, *template_strm;
+
+	inode_for_each_stream(strm, inode) {
 		struct blob_descriptor *blob, *template_blob, **back_ptr;
 
-		strm = &inode->i_streams[i];
 		template_strm = inode_get_stream(template_inode,
 						 strm->stream_type,
 						 strm->stream_name);

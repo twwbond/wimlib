@@ -802,9 +802,9 @@ dentry_extraction_path_length(const struct wim_dentry *dentry)
 static size_t
 inode_longest_named_data_stream_spec(const struct wim_inode *inode)
 {
+	const struct wim_inode_stream *strm;
 	size_t max = 0;
-	for (unsigned i = 0; i < inode->i_num_streams; i++) {
-		const struct wim_inode_stream *strm = &inode->i_streams[i];
+	inode_for_each_stream(strm, inode) {
 		if (!stream_is_named_data_stream(strm))
 			continue;
 		size_t len = utf16le_len_chars(strm->stream_name);
@@ -1484,14 +1484,14 @@ create_empty_named_data_streams(const struct wim_dentry *dentry,
 				struct win32_apply_ctx *ctx)
 {
 	const struct wim_inode *inode = dentry->d_inode;
+	const struct wim_inode_stream *strm;
 	bool path_modified = false;
 	int ret = 0;
 
 	if (!ctx->common.supported_features.named_data_streams)
 		return 0;
 
-	for (unsigned i = 0; i < inode->i_num_streams; i++) {
-		const struct wim_inode_stream *strm = &inode->i_streams[i];
+	inode_for_each_stream(strm, inode) {
 		HANDLE h;
 
 		if (!stream_is_named_data_stream(strm) ||

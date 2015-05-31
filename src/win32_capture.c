@@ -1097,8 +1097,9 @@ get_sort_key(HANDLE h)
 static void
 set_sort_key(struct wim_inode *inode, u64 sort_key)
 {
-	for (unsigned i = 0; i < inode->i_num_streams; i++) {
-		struct wim_inode_stream *strm = &inode->i_streams[i];
+	struct wim_inode_stream *strm;
+
+	inode_for_each_stream(strm, inode) {
 		struct blob_descriptor *blob = stream_blob_resolved(strm);
 		if (blob && (blob->blob_location == BLOB_IN_WINNT_FILE_ON_DISK ||
 			     blob->blob_location == BLOB_WIN32_ENCRYPTED))

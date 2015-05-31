@@ -1442,6 +1442,7 @@ wimfs_listxattr(const char *path, char *list, size_t size)
 {
 	const struct wimfs_context *ctx = wimfs_get_context();
 	const struct wim_inode *inode;
+	const struct wim_inode_stream *strm;
 	char *p = list;
 	char *end = list + size;
 	int total_size = 0;
@@ -1456,12 +1457,9 @@ wimfs_listxattr(const char *path, char *list, size_t size)
 	if (!inode)
 		return -errno;
 
-	for (unsigned i = 0; i < inode->i_num_streams; i++) {
-		const struct wim_inode_stream *strm;
+	inode_for_each_stream(strm, inode) {
 		char *stream_name_mbs;
 		size_t stream_name_mbs_nbytes;
-
-		strm = &inode->i_streams[i];
 
 		if (!stream_is_named_data_stream(strm))
 			continue;
@@ -2181,22 +2179,17 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE) {
 		unsigned i;
 		struct wim_inode *inode;
+		struct wim_inode_stream *strm;
 		struct blob_descriptor *blob;
 
-		image_for_each_inode(inode, imd) {
-			for (i = 0; i < inode->i_num_streams; i++) {
-				blob = stream_blob(&inode->i_streams[i],
-						   wim->blob_table);
-				if (blob)
+		image_for_each_inode(inode, imd)
+			inode_for_each_stream(strm, inode)
+				if ((blob = stream_blob(strm, wim->blob_table)))
 					blob->out_refcnt = 0;
-			}
-		}
 
 		image_for_each_inode(inode, imd) {
-			for (i = 0; i < inode->i_num_streams; i++) {
-				blob = stream_blob(&inode->i_streams[i],
-						   wim->blob_table);
-				if (blob) {
+			inode_for_each_stream(strm, inode) {
+				if ((blob = stream_blob(strm, wim->blob_table))) {
 					if (blob->out_refcnt == 0)
 						list_add(&blob->orig_blob_list,
 							 &ctx.orig_blob_list);

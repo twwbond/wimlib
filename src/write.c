@@ -1841,17 +1841,19 @@ inode_find_blobs_to_reference(const struct wim_inode *inode,
 			      const struct blob_table *table,
 			      struct list_head *blob_list)
 {
+	const struct wim_inode_stream *strm;
+
 	wimlib_assert(inode->i_nlink > 0);
 
-	for (unsigned i = 0; i < inode->i_num_streams; i++) {
+	inode_for_each_stream(strm, inode) {
 		struct blob_descriptor *blob;
 		const u8 *hash;
 
-		blob = stream_blob(&inode->i_streams[i], table);
+		blob = stream_blob(strm, table);
 		if (blob) {
 			reference_blob_for_write(blob, blob_list, inode->i_nlink);
 		} else {
-			hash = stream_hash(&inode->i_streams[i]);
+			hash = stream_hash(strm);
 			if (!is_zero_hash(hash))
 				return blob_not_found_error(inode, hash);
 		}

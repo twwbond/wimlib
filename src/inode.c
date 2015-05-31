@@ -79,8 +79,10 @@ destroy_stream(struct wim_inode_stream *strm)
 static void
 free_inode(struct wim_inode *inode)
 {
-	for (unsigned i = 0; i < inode->i_num_streams; i++)
-		destroy_stream(&inode->i_streams[i]);
+	struct wim_inode_stream *strm;
+
+	inode_for_each_stream(strm, inode)
+		destroy_stream(strm);
 	if (inode->i_streams != inode->i_embedded_streams)
 		FREE(inode->i_streams);
 	if (inode->i_extra)
@@ -166,11 +168,12 @@ struct wim_inode_stream *
 inode_get_stream(const struct wim_inode *inode, int stream_type,
 		 const utf16lechar *stream_name)
 {
+	struct wim_inode_stream *strm;
+
 	if (stream_name == NO_STREAM_NAME)  /* Optimization  */
 		return inode_get_unnamed_stream(inode, stream_type);
 
-	for (unsigned i = 0; i < inode->i_num_streams; i++) {
-		struct wim_inode_stream *strm = &inode->i_streams[i];
+	inode_for_each_stream(strm, inode) {
 		if (strm->stream_type == stream_type &&
 		    !cmp_utf16le_strings_z(strm->stream_name, stream_name,
 					   default_ignore_case))
@@ -188,8 +191,9 @@ inode_get_stream(const struct wim_inode *inode, int stream_type,
 struct wim_inode_stream *
 inode_get_unnamed_stream(const struct wim_inode *inode, int stream_type)
 {
-	for (unsigned i = 0; i < inode->i_num_streams; i++) {
-		struct wim_inode_stream *strm = &inode->i_streams[i];
+	struct wim_inode_stream *strm;
+
+	inode_for_each_stream(strm, inode) {
 		if (strm->stream_type == stream_type &&
 		    strm->stream_name == NO_STREAM_NAME)
 		{
@@ -424,8 +428,10 @@ inode_remove_stream(struct wim_inode *inode, struct wim_inode_stream *strm,
 bool
 inode_has_named_data_stream(const struct wim_inode *inode)
 {
-	for (unsigned i = 0; i < inode->i_num_streams; i++)
-		if (stream_is_named_data_stream(&inode->i_streams[i]))
+	const struct wim_inode_stream *strm;
+
+	inode_for_each_stream(strm, inode)
+		if (stream_is_named_data_stream(strm))
 			return true;
 	return false;
 }
@@ -454,9 +460,9 @@ int
 inode_resolve_streams(struct wim_inode *inode, struct blob_table *table,
 		      bool force)
 {
-	for (unsigned i = 0; i < inode->i_num_streams; i++) {
-		struct wim_inode_stream *strm = &inode->i_streams[i];
+	struct wim_inode_stream *strm;
 
+	inode_for_each_stream(strm, inode) {
 		if (strm->stream_resolved)
 			continue;
 
@@ -578,13 +584,12 @@ inode_get_hash_of_unnamed_data_stream(const struct wim_inode *inode)
 void
 inode_ref_blobs(struct wim_inode *inode)
 {
-	for (unsigned i = 0; i < inode->i_num_streams; i++) {
-		struct blob_descriptor *blob;
+	struct wim_inode_stream *strm;
+	struct blob_descriptor *blob;
 
-		blob = stream_blob_resolved(&inode->i_streams[i]);
-		if (blob)
+	inode_for_each_stream(strm, inode)
+		if ((blob = stream_blob_resolved(strm)))
 			blob->refcnt++;
-	}
 }
 
 /* Release a reference to each blob referenced by this inode.  This is necessary
@@ -592,13 +597,12 @@ inode_ref_blobs(struct wim_inode *inode)
 void
 inode_unref_blobs(struct wim_inode *inode, struct blob_table *blob_table)
 {
-	for (unsigned i = 0; i < inode->i_num_streams; i++) {
-		struct blob_descriptor *blob;
+	struct wim_inode_stream *strm;
+	struct blob_descriptor *blob;
 
-		blob = stream_blob(&inode->i_streams[i], blob_table);
-		if (blob)
+	inode_for_each_stream(strm, inode)
+		if ((blob = stream_blob(strm, blob_table)))
 			blob_decrement_refcnt(blob, blob_table);
-	}
 }
 
 /*
@@ -616,10 +620,12 @@ retrieve_pointer_to_unhashed_blob(struct blob_descriptor *blob)
 	wimlib_assert(blob->unhashed);
 
 	struct wim_inode *inode = blob->back_inode;
-	for (unsigned i = 0; i < inode->i_num_streams; i++) {
-		if (inode->i_streams[i].stream_id == blob->back_stream_id) {
-			wimlib_assert(inode->i_streams[i]._stream_blob == blob);
-			return &inode->i_streams[i]._stream_blob;
+	struct wim_inode_stream *strm;
+
+	inode_for_each_stream(strm, inode) {
+		if (strm->stream_id == blob->back_stream_id) {
+			wimlib_assert(strm->_stream_blob == blob);
+			return &strm->_stream_blob;
 		}
 	}
 

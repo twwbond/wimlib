@@ -139,9 +139,7 @@ init_wimlib_dentry(struct wimlib_dir_entry *wdentry, struct wim_dentry *dentry,
 			return ret;
 	}
 
-	for (unsigned i = 0; i < inode->i_num_streams; i++) {
-
-		strm = &inode->i_streams[i];
+	inode_for_each_stream(strm, inode) {
 
 		if (!stream_is_named_data_stream(strm))
 			continue;

@@ -1165,15 +1165,13 @@ static u64
 inode_sum_stream_sizes(const struct wim_inode *inode,
 		       const struct blob_table *blob_table)
 {
+	const struct wim_inode_stream *strm;
+	const struct blob_descriptor *blob;
 	u64 total_size = 0;
 
-	for (unsigned i = 0; i < inode->i_num_streams; i++) {
-		const struct blob_descriptor *blob;
-
-		blob = stream_blob(&inode->i_streams[i], blob_table);
-		if (blob)
+	inode_for_each_stream(strm, inode)
+		if ((blob = stream_blob(strm, blob_table)))
 			total_size += blob->size;
-	}
 	return total_size;
 }
 

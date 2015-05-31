@@ -866,6 +866,7 @@ dentry_resolve_streams(struct wim_dentry *dentry, int extract_flags,
 		       struct blob_table *blob_table)
 {
 	struct wim_inode *inode = dentry->d_inode;
+	const struct wim_inode_stream *strm;
 	struct blob_descriptor *blob;
 	int ret;
 	bool force = false;
@@ -881,8 +882,8 @@ dentry_resolve_streams(struct wim_dentry *dentry, int extract_flags,
 	ret = inode_resolve_streams(inode, blob_table, force);
 	if (ret)
 		return ret;
-	for (unsigned i = 0; i < inode->i_num_streams; i++) {
-		blob = stream_blob_resolved(&inode->i_streams[i]);
+	inode_for_each_stream(strm, inode) {
+		blob = stream_blob_resolved(strm);
 		if (blob)
 			blob->out_refcnt = 0;
 	}
@@ -1043,9 +1044,11 @@ static int
 dentry_ref_streams(struct wim_dentry *dentry, struct apply_ctx *ctx)
 {
 	struct wim_inode *inode = dentry->d_inode;
-	for (unsigned i = 0; i < inode->i_num_streams; i++) {
-		int ret = ref_stream_if_needed(dentry, inode,
-					       &inode->i_streams[i], ctx);
+	struct wim_inode_stream *strm;
+	int ret;
+
+	inode_for_each_stream(strm, inode) {
+		ret = ref_stream_if_needed(dentry, inode, strm, ctx);
 		if (ret)
 			return ret;
 	}

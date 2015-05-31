@@ -331,9 +331,9 @@ ntfs_3g_create_empty_named_data_streams(ntfs_inode *ni,
 					const struct wim_inode *inode,
 					const struct ntfs_3g_apply_ctx *ctx)
 {
-	for (unsigned i = 0; i < inode->i_num_streams; i++) {
+	const struct wim_inode_stream *strm;
 
-		const struct wim_inode_stream *strm = &inode->i_streams[i];
+	inode_for_each_stream(strm, inode) {
 
 		if (!stream_is_named_data_stream(strm) ||
 		    stream_blob_resolved(strm) != NULL)

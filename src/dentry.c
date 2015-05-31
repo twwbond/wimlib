@@ -372,8 +372,9 @@ dentry_out_total_length(const struct wim_dentry *dentry)
 		 */
 		bool have_named_data_stream = false;
 		bool have_reparse_point_stream = false;
-		for (unsigned i = 0; i < inode->i_num_streams; i++) {
-			const struct wim_inode_stream *strm = &inode->i_streams[i];
+		const struct wim_inode_stream *strm;
+
+		inode_for_each_stream(strm, inode) {
 			if (stream_is_named_data_stream(strm)) {
 				len += stream_out_total_length(strm);
 				have_named_data_stream = true;
@@ -1224,8 +1225,9 @@ read_extra_data(const u8 *p, const u8 *end, struct wim_inode *inode)
 static void
 assign_stream_types_encrypted(struct wim_inode *inode)
 {
-	for (unsigned i = 0; i < inode->i_num_streams; i++) {
-		struct wim_inode_stream *strm = &inode->i_streams[i];
+	struct wim_inode_stream *strm;
+
+	inode_for_each_stream(strm, inode) {
 		if (!stream_is_named(strm) && !is_zero_hash(strm->_stream_hash))
 		{
 			strm->stream_type = STREAM_TYPE_EFSRPC_RAW_DATA;
@@ -1247,10 +1249,9 @@ assign_stream_types_unencrypted(struct wim_inode *inode)
 	bool found_reparse_point_stream = false;
 	bool found_unnamed_data_stream = false;
 	struct wim_inode_stream *unnamed_stream_with_zero_hash = NULL;
+	struct wim_inode_stream *strm;
 
-	for (unsigned i = 0; i < inode->i_num_streams; i++) {
-		struct wim_inode_stream *strm = &inode->i_streams[i];
-
+	inode_for_each_stream(strm, inode) {
 		if (stream_is_named(strm)) {
 			/* Named data stream  */
 			strm->stream_type = STREAM_TYPE_DATA;
@@ -1817,8 +1818,9 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 		bool have_reparse_point_stream = false;
 		const u8 *unnamed_data_stream_hash = zero_hash;
 		const u8 *reparse_point_hash;
-		for (unsigned i = 0; i < inode->i_num_streams; i++) {
-			const struct wim_inode_stream *strm = &inode->i_streams[i];
+		const struct wim_inode_stream *strm;
+
+		inode_for_each_stream(strm, inode) {
 			if (strm->stream_type == STREAM_TYPE_DATA) {
 				if (stream_is_named(strm))
 					have_named_data_stream = true;
@@ -1833,6 +1835,7 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 		if (unlikely(have_reparse_point_stream || have_named_data_stream)) {
 
 			unsigned num_extra_streams = 0;
+			const struct wim_inode_stream *strm;
 
 			copy_hash(disk_dentry->default_hash, zero_hash);
 
@@ -1846,8 +1849,7 @@ write_dentry(const struct wim_dentry * restrict dentry, u8 * restrict p)
 						     unnamed_data_stream_hash);
 			num_extra_streams++;
 
-			for (unsigned i = 0; i < inode->i_num_streams; i++) {
-				const struct wim_inode_stream *strm = &inode->i_streams[i];
+			inode_for_each_stream(strm, inode) {
 				if (stream_is_named_data_stream(strm)) {
 					p = write_extra_stream_entry(p, strm->stream_name,
 								     stream_hash(strm));

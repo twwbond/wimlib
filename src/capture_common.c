@@ -72,12 +72,12 @@ do_capture_progress(struct capture_params *params, int status,
 		/* Successful scan, and visiting inode for the first time  */
 
 		/* Tally size of all streams.  */
-		for (unsigned i = 0; i < inode->i_num_streams; i++) {
-			const struct blob_descriptor *blob =
-				stream_blob_resolved(&inode->i_streams[i]);
-			if (blob)
+		const struct wim_inode_stream *strm;
+		const struct blob_descriptor *blob;
+
+		inode_for_each_stream(strm, inode)
+			if ((blob = stream_blob_resolved(strm)))
 				params->progress.scan.num_bytes_scanned += blob->size;
-		}
 
 		/* Tally the file itself.  */
 		if (inode->i_attributes & FILE_ATTRIBUTE_DIRECTORY)
