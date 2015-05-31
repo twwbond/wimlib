@@ -51,14 +51,12 @@ FILE *wimlib_error_file = NULL; /* Set in wimlib_global_init() */
 static bool wimlib_owns_error_file = false;
 #endif
 
-#if defined(ENABLE_ERROR_MESSAGES) || defined(ENABLE_DEBUG)
+#if defined(ENABLE_ERROR_MESSAGES)
 static void
 wimlib_vmsg(const tchar *tag, const tchar *format, va_list va, bool perror)
 {
-#ifndef ENABLE_DEBUG
 	if (!wimlib_print_errors)
 		return;
-#endif
 	int errno_save = errno;
 	fflush(stdout);
 	tfputs(tag, wimlib_error_file);
@@ -125,20 +123,6 @@ wimlib_warning_with_errno(const tchar *format, ...)
 	va_end(va);
 }
 
-#endif
-
-#ifdef ENABLE_DEBUG
-void wimlib_debug(const tchar *filename, int line, const char *func,
-		  const tchar *format, ...)
-{
-	va_list va;
-	tchar buf[tstrlen(filename) + strlen(func) + 30];
-
-	tsprintf(buf, T("[%"TS" %d] %s(): "), filename, line, func);
-	va_start(va, format);
-	wimlib_vmsg(buf, format, va, false);
-	va_end(va);
-}
 #endif
 
 void
