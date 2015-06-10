@@ -378,8 +378,6 @@ out_free_buf:
 static int
 winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				  HANDLE cur_dir,
-				  wchar_t *full_path,
-				  size_t full_path_nchars,
 				  const wchar_t *filename,
 				  size_t filename_nchars,
 				  struct capture_params *params,
@@ -388,8 +386,6 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 
 static int
 winnt_recurse_directory(HANDLE h,
-			wchar_t *full_path,
-			size_t full_path_nchars,
 			struct wim_dentry *parent,
 			struct capture_params *params,
 			struct winnt_scan_stats *stats,
@@ -418,35 +414,24 @@ winnt_recurse_directory(HANDLE h,
 			if (!should_ignore_filename(info->FileName,
 						    info->FileNameLength / 2))
 			{
-				wchar_t *p;
-				wchar_t *filename;
 				struct wim_dentry *child;
+				size_t orig_path_nchars;
 
-				p = full_path + full_path_nchars;
-				/* Only add a backslash if we don't already have
-				 * one.  This prevents a duplicate backslash
-				 * from being added when the path to the capture
-				 * dir had a trailing backslash.  */
-				if (*(p - 1) != L'\\')
-					*p++ = L'\\';
-				filename = p;
-				p = wmempcpy(filename, info->FileName,
-					     info->FileNameLength / 2);
-				*p = '\0';
+				ret = pathbuf_append_name(params, info->FileName,
+							  info->FileNameLength / 2,
+							  &orig_path_nchars);
+				if (ret)
+					goto out_free_buf;
 
 				ret = winnt_build_dentry_tree_recursive(
 							&child,
 							h,
-							full_path,
-							p - full_path,
-							filename,
+							&params->path_buf[orig_path_nchars + 1],
 							info->FileNameLength / 2,
 							params,
 							stats,
 							vol_flags);
-
-				full_path[full_path_nchars] = L'\0';
-
+				pathbuf_restore_name(params, orig_path_nchars);
 				if (ret)
 					goto out_free_buf;
 				attach_scanned_tree(parent, child, params->blob_table);
@@ -460,7 +445,7 @@ winnt_recurse_directory(HANDLE h,
 
 	if (unlikely(status != STATUS_NO_MORE_FILES)) {
 		winnt_error(status, L"\"%ls\": Can't read directory",
-			    printable_path(full_path));
+			    printable_path(params->path_buf));
 		ret = WIMLIB_ERR_READ;
 	}
 out_free_buf:
@@ -593,7 +578,7 @@ out_close_root_dir:
 }
 
 static int
-winnt_rpfix_progress(struct capture_params *params, const wchar_t *path,
+winnt_rpfix_progress(struct capture_params *params,
 		     const struct link_reparse_point *link, int scan_status)
 {
 	size_t print_name_nchars = link->print_name_nbytes / sizeof(wchar_t);
@@ -602,14 +587,14 @@ winnt_rpfix_progress(struct capture_params *params, const wchar_t *path,
 	wmemcpy(print_name0, link->print_name, print_name_nchars);
 	print_name0[print_name_nchars] = L'\0';
 
-	params->progress.scan.cur_path = printable_path(path);
+	params->progress.scan.cur_path = printable_path(params->path_buf);
 	params->progress.scan.symlink_target = print_name0;
 	return do_capture_progress(params, scan_status, NULL);
 }
 
 static int
 winnt_try_rpfix(struct reparse_buffer_disk *rpbuf, u16 *rpbuflen_p,
-		const wchar_t *path, struct capture_params *params)
+		struct capture_params *params)
 {
 	struct link_reparse_point link;
 	const wchar_t *rel_target;
@@ -653,7 +638,7 @@ winnt_try_rpfix(struct reparse_buffer_disk *rpbuf, u16 *rpbuflen_p,
 	if (rel_target == link.substitute_name) {
 		/* Target points outside of the tree being captured or had an
 		 * unrecognized path format.  Don't adjust it.  */
-		return winnt_rpfix_progress(params, path, &link,
+		return winnt_rpfix_progress(params, &link,
 					    WIMLIB_SCAN_DENTRY_NOT_FIXED_SYMLINK);
 	}
 
@@ -689,7 +674,7 @@ winnt_try_rpfix(struct reparse_buffer_disk *rpbuf, u16 *rpbuflen_p,
 	if (make_link_reparse_point(&link, rpbuf, rpbuflen_p))
 		return 0;
 
-	ret = winnt_rpfix_progress(params, path, &link,
+	ret = winnt_rpfix_progress(params, &link,
 				   WIMLIB_SCAN_DENTRY_FIXED_SYMLINK);
 	if (ret)
 		return ret;
@@ -702,7 +687,7 @@ winnt_try_rpfix(struct reparse_buffer_disk *rpbuf, u16 *rpbuflen_p,
  * capture root.  */
 static noinline_for_stack int
 winnt_load_reparse_data(HANDLE h, struct wim_inode *inode,
-			const wchar_t *full_path, struct capture_params *params)
+			struct capture_params *params)
 {
 	struct reparse_buffer_disk rpbuf;
 	DWORD bytes_returned;
@@ -712,7 +697,7 @@ winnt_load_reparse_data(HANDLE h, struct wim_inode *inode,
 	if (inode->i_attributes & FILE_ATTRIBUTE_ENCRYPTED) {
 		/* See comment above assign_stream_types_encrypted()  */
 		WARNING("Ignoring reparse data of encrypted file \"%ls\"",
-			printable_path(full_path));
+			printable_path(params->path_buf));
 		return 0;
 	}
 
@@ -721,7 +706,7 @@ winnt_load_reparse_data(HANDLE h, struct wim_inode *inode,
 			     &bytes_returned, NULL))
 	{
 		win32_error(GetLastError(), L"\"%ls\": Can't get reparse point",
-			    printable_path(full_path));
+			    printable_path(params->path_buf));
 		return WIMLIB_ERR_READLINK;
 	}
 
@@ -729,12 +714,12 @@ winnt_load_reparse_data(HANDLE h, struct wim_inode *inode,
 
 	if (unlikely(rpbuflen < REPARSE_DATA_OFFSET)) {
 		ERROR("\"%ls\": reparse point buffer is too short",
-		      printable_path(full_path));
+		      printable_path(params->path_buf));
 		return WIMLIB_ERR_INVALID_REPARSE_DATA;
 	}
 
 	if (params->add_flags & WIMLIB_ADD_FLAG_RPFIX) {
-		ret = winnt_try_rpfix(&rpbuf, &rpbuflen, full_path, params);
+		ret = winnt_try_rpfix(&rpbuf, &rpbuflen, params);
 		if (ret == RP_FIXED)
 			inode->i_rp_flags &= ~WIM_RP_FLAG_NOT_FIXED;
 		else if (ret)
@@ -1107,8 +1092,7 @@ set_sort_key(struct wim_inode *inode, u64 sort_key)
 }
 
 static noinline_for_stack u32
-get_volume_information(HANDLE h, const wchar_t *full_path,
-		       struct capture_params *params)
+get_volume_information(HANDLE h, struct capture_params *params)
 {
 	FILE_FS_ATTRIBUTE_INFORMATION attr_info;
 	FILE_FS_VOLUME_INFORMATION vol_info;
@@ -1130,7 +1114,7 @@ get_volume_information(HANDLE h, const wchar_t *full_path,
 		vol_flags = attr_info.FileSystemAttributes;
 	} else {
 		winnt_warning(status, L"\"%ls\": Can't get volume attributes",
-			      printable_path(full_path));
+			      printable_path(params->path_buf));
 		vol_flags = 0;
 	}
 
@@ -1148,7 +1132,7 @@ get_volume_information(HANDLE h, const wchar_t *full_path,
 		params->capture_root_dev = vol_info.VolumeSerialNumber;
 	} else {
 		winnt_warning(status, L"\"%ls\": Can't get volume ID",
-			      printable_path(full_path));
+			      printable_path(params->path_buf));
 		params->capture_root_dev = 0;
 	}
 	return vol_flags;
@@ -1191,8 +1175,6 @@ get_file_info(HANDLE h, struct file_info *info)
 static int
 winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 				  HANDLE cur_dir,
-				  wchar_t *full_path,
-				  size_t full_path_nchars,
 				  const wchar_t *filename,
 				  size_t filename_nchars,
 				  struct capture_params *params,
@@ -1208,7 +1190,7 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 	ACCESS_MASK requestedPerms;
 	u64 sort_key;
 
-	ret = try_exclude(full_path, params);
+	ret = try_exclude(params->path_buf, params);
 	if (unlikely(ret < 0)) /* Excluded? */
 		goto out_progress;
 	if (unlikely(ret > 0)) /* Error? */
@@ -1222,14 +1204,14 @@ winnt_build_dentry_tree_recursive(struct wim_dentry **root_ret,
 			 SYNCHRONIZE;
 retry_open:
 	status = winnt_openat(cur_dir,
-			      (cur_dir ? filename : full_path),
-			      (cur_dir ? filename_nchars : full_path_nchars),
+			      (cur_dir ? filename : params->path_buf),
+			      (cur_dir ? filename_nchars : params->path_nchars),
 			      requestedPerms,
 			      &h);
 	if (unlikely(!NT_SUCCESS(status))) {
 		if (status == STATUS_DELETE_PENDING) {
 			WARNING("\"%ls\": Deletion pending; skipping file",
-				printable_path(full_path));
+				printable_path(params->path_buf));
 			ret = 0;
 			goto out;
 		}
@@ -1241,7 +1223,7 @@ retry_open:
 		}
 
 		winnt_error(status, L"\"%ls\": Can't open file",
-			    printable_path(full_path));
+			    printable_path(params->path_buf));
 		if (status == STATUS_FVE_LOCKED_VOLUME)
 			ret = WIMLIB_ERR_FVE_LOCKED_VOLUME;
 		else
@@ -1253,7 +1235,7 @@ retry_open:
 	status = get_file_info(h, &file_info);
 	if (!NT_SUCCESS(status)) {
 		winnt_error(status, L"\"%ls\": Can't get file information",
-			    printable_path(full_path));
+			    printable_path(params->path_buf));
 		ret = WIMLIB_ERR_STAT;
 		goto out;
 	}
@@ -1262,14 +1244,14 @@ retry_open:
 	    !(file_info.attributes & FILE_ATTRIBUTE_ENCRYPTED))
 	{
 		ERROR("\"%ls\": Permission to read data was denied",
-		      printable_path(full_path));
+		      printable_path(params->path_buf));
 		ret = WIMLIB_ERR_OPEN;
 		goto out;
 	}
 
 	if (unlikely(!cur_dir)) {
 		/* Root of tree being captured; get volume information.  */
-		vol_flags = get_volume_information(h, full_path, params);
+		vol_flags = get_volume_information(h, params);
 		params->capture_root_ino = file_info.ino;
 	}
 
@@ -1331,7 +1313,7 @@ retry_open:
 		if (!NT_SUCCESS(status)) {
 			winnt_error(status,
 				    L"\"%ls\": Can't read security descriptor",
-				    printable_path(full_path));
+				    printable_path(params->path_buf));
 			ret = WIMLIB_ERR_STAT;
 			goto out;
 		}
@@ -1339,7 +1321,7 @@ retry_open:
 
 	/* If this is a reparse point, load the reparse data.  */
 	if (unlikely(inode->i_attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
-		ret = winnt_load_reparse_data(h, inode, full_path, params);
+		ret = winnt_load_reparse_data(h, inode, params);
 		if (ret)
 			goto out;
 	}
@@ -1357,7 +1339,7 @@ retry_open:
 		 * needed.  */
 		(*func_NtClose)(h);
 		h = NULL;
-		ret = winnt_scan_efsrpc_raw_data(inode, full_path,
+		ret = winnt_scan_efsrpc_raw_data(inode, params->path_buf,
 						 params->unhashed_blobs);
 		if (ret)
 			goto out;
@@ -1373,8 +1355,8 @@ retry_open:
 		 * the EFSRPC data and the named data stream(s)...!
 		 */
 		ret = winnt_scan_data_streams(h,
-					      full_path,
-					      full_path_nchars,
+					      params->path_buf,
+					      params->path_nchars,
 					      inode,
 					      params->unhashed_blobs,
 					      file_info.end_of_file,
@@ -1394,22 +1376,20 @@ retry_open:
 			 * data.  */
 			status = winnt_openat(cur_dir,
 					      (cur_dir ?
-					       filename : full_path),
+					       filename : params->path_buf),
 					      (cur_dir ?
-					       filename_nchars : full_path_nchars),
+					       filename_nchars : params->path_nchars),
 					      FILE_LIST_DIRECTORY | SYNCHRONIZE,
 					      &h);
 			if (!NT_SUCCESS(status)) {
 				winnt_error(status,
 					    L"\"%ls\": Can't re-open file",
-					    printable_path(full_path));
+					    printable_path(params->path_buf));
 				ret = WIMLIB_ERR_OPEN;
 				goto out;
 			}
 		}
 		ret = winnt_recurse_directory(h,
-					      full_path,
-					      full_path_nchars,
 					      root,
 					      params,
 					      stats,
@@ -1419,7 +1399,7 @@ retry_open:
 	}
 
 out_progress:
-	params->progress.scan.cur_path = printable_path(full_path);
+	params->progress.scan.cur_path = printable_path(params->path_buf);
 	if (likely(root))
 		ret = do_capture_progress(params, WIMLIB_SCAN_DENTRY_OK, inode);
 	else
@@ -1430,7 +1410,7 @@ out:
 	if (unlikely(ret)) {
 		free_dentry_tree(root, params->blob_table);
 		root = NULL;
-		ret = report_capture_error(params, ret, full_path);
+		ret = report_capture_error(params, ret, params->path_buf);
 	}
 	*root_ret = root;
 	return ret;
@@ -1466,22 +1446,13 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 			const wchar_t *root_disk_path,
 			struct capture_params *params)
 {
-	wchar_t *path;
 	int ret;
 	UNICODE_STRING ntpath;
 	struct winnt_scan_stats stats;
-	size_t ntpath_nchars;
-
-	/* WARNING: There is no check for overflow later when this buffer is
-	 * being used!  But it's as long as the maximum path length understood
-	 * by Windows NT (which is NOT the same as MAX_PATH).  */
-	path = MALLOC((WINDOWS_NT_MAX_PATH + 1) * sizeof(wchar_t));
-	if (!path)
-		return WIMLIB_ERR_NOMEM;
 
 	ret = win32_path_to_nt_path(root_disk_path, &ntpath);
 	if (ret)
-		goto out_free_path;
+		return ret;
 
 	if (ntpath.Length < 4 * sizeof(wchar_t) ||
 	    ntpath.Length > WINDOWS_NT_MAX_PATH * sizeof(wchar_t) ||
@@ -1490,27 +1461,18 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 		ERROR("\"%ls\": unrecognized path format", root_disk_path);
 		ret = WIMLIB_ERR_INVALID_PARAM;
 	} else {
-		ntpath_nchars = ntpath.Length / sizeof(wchar_t);
-		wmemcpy(path, ntpath.Buffer, ntpath_nchars);
-		path[ntpath_nchars] = L'\0';
-
-		params->capture_root_nchars = ntpath_nchars;
-		if (path[ntpath_nchars - 1] == L'\\')
-			params->capture_root_nchars--;
-		ret = 0;
+		ret = pathbuf_init(params, ntpath.Buffer);
 	}
 	HeapFree(GetProcessHeap(), 0, ntpath.Buffer);
 	if (ret)
-		goto out_free_path;
+		return ret;
 
 	memset(&stats, 0, sizeof(stats));
 
 	ret = winnt_build_dentry_tree_recursive(root_ret, NULL,
-						path, ntpath_nchars,
 						L"", 0, params, &stats, 0);
-out_free_path:
-	FREE(path);
-	if (ret == 0)
+	pathbuf_destroy(params);
+	if (!ret)
 		winnt_do_scan_warnings(root_disk_path, &stats);
 	return ret;
 }
