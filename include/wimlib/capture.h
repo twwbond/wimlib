@@ -49,14 +49,15 @@ struct capture_params {
 	/* Progress data.  */
 	union wimlib_progress_info progress;
 
-	/* The capture implementation must set this to the number of characters
-	 * that try_exclude() will strip from the path before testing exclusion
-	 * patterns from the capture configuration file.  */
-	size_t capture_root_nchars;
-
 	/* Can be used by the capture implementation.  */
 	u64 capture_root_ino;
 	u64 capture_root_dev;
+
+	/* TODO */
+	tchar *path_buf;
+	size_t path_nchars;
+	size_t path_alloc_nchars;
+	size_t capture_root_nchars;
 };
 
 /* capture_common.c */
@@ -123,5 +124,18 @@ should_ignore_filename(const tchar *name, int name_nchars);
 extern void
 attach_scanned_tree(struct wim_dentry *parent, struct wim_dentry *child,
 		    struct blob_table *blob_table);
+
+extern int
+pathbuf_init(struct capture_params *params, const tchar *root_path);
+
+extern int
+pathbuf_append_name(struct capture_params *params, const tchar *name,
+		    size_t name_nchars, size_t *orig_path_nchars_ret);
+
+extern void
+pathbuf_restore_name(struct capture_params *params, size_t orig_path_nchars);
+
+extern void
+pathbuf_destroy(struct capture_params *params);
 
 #endif /* _WIMLIB_CAPTURE_H */

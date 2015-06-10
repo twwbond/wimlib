@@ -355,3 +355,55 @@ attach_scanned_tree(struct wim_dentry *parent, struct wim_dentry *child,
 		free_dentry_tree(child, blob_table);
 	}
 }
+
+int
+pathbuf_init(struct capture_params *params, const tchar *root_path)
+{
+	size_t nchars = tstrlen(root_path);
+	size_t alloc_nchars = nchars + 1024;
+	params->path_buf = MALLOC(alloc_nchars * sizeof(tchar));
+	if (!params->path_buf)
+		return WIMLIB_ERR_NOMEM;
+	tstrcpy(params->path_buf, root_path);
+	params->path_nchars = nchars;
+	params->path_alloc_nchars = alloc_nchars;
+	params->capture_root_nchars = nchars;
+	return 0;
+}
+
+int
+pathbuf_append_name(struct capture_params *params, const tchar *name,
+		    size_t name_nchars, size_t *orig_path_nchars_ret)
+{
+	size_t path_nchars = params->path_nchars;
+	size_t required_nchars = path_nchars + 1 + name_nchars + 1;
+	tchar *buf = params->path_buf;
+	if (unlikely(required_nchars > params->path_alloc_nchars)) {
+		required_nchars += 1024;
+		buf = REALLOC(buf, required_nchars * sizeof(tchar));
+		if (!buf)
+			return WIMLIB_ERR_NOMEM;
+		params->path_buf = buf;
+		params->path_alloc_nchars = required_nchars;
+	}
+	*orig_path_nchars_ret = path_nchars;
+	buf[path_nchars++] = OS_PREFERRED_PATH_SEPARATOR;
+	memcpy(&buf[path_nchars], name, name_nchars * sizeof(tchar));
+	path_nchars += name_nchars;
+	buf[path_nchars] = T('\0');
+	params->path_nchars = path_nchars;
+	return 0;
+}
+
+void
+pathbuf_restore_name(struct capture_params *params, size_t orig_path_nchars)
+{
+	params->path_buf[orig_path_nchars] = T('\0');
+	params->path_nchars = orig_path_nchars;
+}
+
+void
+pathbuf_destroy(struct capture_params *params)
+{
+	FREE(params->path_buf);
+}
