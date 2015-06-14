@@ -42,7 +42,7 @@ struct wim_security_data_disk {
 struct wim_security_data *
 new_wim_security_data(void)
 {
-	return CALLOC(1, sizeof(struct wim_security_data));
+	return ZALLOC(sizeof(struct wim_security_data));
 }
 
 /*

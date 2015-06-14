@@ -909,7 +909,7 @@ new_dentry(const tchar *name, struct wim_dentry **dentry_ret)
 	struct wim_dentry *dentry;
 	int ret;
 
-	dentry = CALLOC(1, sizeof(struct wim_dentry));
+	dentry = ZALLOC(sizeof(struct wim_dentry));
 	if (!dentry)
 		return WIMLIB_ERR_NOMEM;
 

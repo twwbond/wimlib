@@ -552,7 +552,7 @@ xml_read_wim_info(const xmlNode *wim_node, struct wim_info **wim_info_ret)
 	int num_images;
 	int i;
 
-	wim_info = CALLOC(1, sizeof(struct wim_info));
+	wim_info = ZALLOC(sizeof(struct wim_info));
 	if (!wim_info)
 		return WIMLIB_ERR_NOMEM;
 
@@ -1080,7 +1080,7 @@ xml_export_image(const struct wim_info *old_wim_info,
 	if (*new_wim_info_p) {
 		new_wim_info = *new_wim_info_p;
 	} else {
-		new_wim_info = CALLOC(1, sizeof(struct wim_info));
+		new_wim_info = ZALLOC(sizeof(struct wim_info));
 		if (!new_wim_info)
 			goto err;
 	}
@@ -1224,7 +1224,7 @@ xml_add_image(WIMStruct *wim, const tchar *name)
 	if (wim->wim_info) {
 		wim_info = wim->wim_info;
 	} else {
-		wim_info = CALLOC(1, sizeof(struct wim_info));
+		wim_info = ZALLOC(sizeof(struct wim_info));
 		if (!wim_info)
 			return WIMLIB_ERR_NOMEM;
 	}

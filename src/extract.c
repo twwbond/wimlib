@@ -1309,7 +1309,7 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 		goto out;
 	}
 
-	ctx = CALLOC(1, ops->context_size);
+	ctx = ZALLOC(ops->context_size);
 	if (!ctx) {
 		ret = WIMLIB_ERR_NOMEM;
 		goto out;

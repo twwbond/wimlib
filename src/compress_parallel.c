@@ -433,7 +433,7 @@ new_parallel_chunk_compressor(int out_ctype, u32 out_chunk_size,
 		return -2;
 
 	ret = WIMLIB_ERR_NOMEM;
-	ctx = CALLOC(1, sizeof(*ctx));
+	ctx = ZALLOC(sizeof(*ctx));
 	if (ctx == NULL)
 		goto err;
 

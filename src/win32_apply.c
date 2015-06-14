@@ -317,7 +317,7 @@ load_prepopulate_pats(struct win32_apply_ctx *ctx)
 	if (ret)
 		return ret;
 
-	s = CALLOC(1, sizeof(struct string_set));
+	s = ZALLOC(sizeof(struct string_set));
 	if (!s) {
 		FREE(buf);
 		return WIMLIB_ERR_NOMEM;

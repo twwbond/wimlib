@@ -309,7 +309,7 @@ scan_ntfs_attr(struct wim_inode *inode,
 			goto out_cleanup;
 		}
 
-		blob->ntfs_loc = CALLOC(1, sizeof(struct ntfs_location));
+		blob->ntfs_loc = ZALLOC(sizeof(struct ntfs_location));
 		if (unlikely(!blob->ntfs_loc)) {
 			ret = WIMLIB_ERR_NOMEM;
 			goto out_cleanup;

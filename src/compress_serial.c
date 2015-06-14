@@ -114,7 +114,7 @@ new_serial_chunk_compressor(int out_ctype, u32 out_chunk_size,
 
 	wimlib_assert(out_chunk_size > 0);
 
-	ctx = CALLOC(1, sizeof(*ctx));
+	ctx = ZALLOC(sizeof(*ctx));
 	if (ctx == NULL)
 		return WIMLIB_ERR_NOMEM;
 

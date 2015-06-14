@@ -50,7 +50,7 @@ new_inode(struct wim_dentry *dentry, bool set_timestamps)
 {
 	struct wim_inode *inode;
 
-	inode = CALLOC(1, sizeof(struct wim_inode));
+	inode = ZALLOC(sizeof(struct wim_inode));
 	if (!inode)
 		return NULL;
 

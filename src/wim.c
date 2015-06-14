@@ -142,7 +142,7 @@ wim_has_solid_resources(const WIMStruct *wim)
 static WIMStruct *
 new_wim_struct(void)
 {
-	WIMStruct *wim = CALLOC(1, sizeof(WIMStruct));
+	WIMStruct *wim = ZALLOC(sizeof(WIMStruct));
 	if (!wim)
 		return NULL;
 
@@ -258,7 +258,7 @@ new_image_metadata(void)
 {
 	struct wim_image_metadata *imd;
 
-	imd = CALLOC(1, sizeof(*imd));
+	imd = ZALLOC(sizeof(*imd));
 	if (imd) {
 		imd->refcnt = 1;
 		INIT_HLIST_HEAD(&imd->inode_list);

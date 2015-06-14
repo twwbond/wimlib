@@ -100,7 +100,7 @@ struct blob_descriptor *
 new_blob_descriptor(void)
 {
 	BUILD_BUG_ON(BLOB_NONEXISTENT != 0);
-	return CALLOC(1, sizeof(struct blob_descriptor));
+	return ZALLOC(sizeof(struct blob_descriptor));
 }
 
 struct blob_descriptor *

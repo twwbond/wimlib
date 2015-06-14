@@ -81,10 +81,15 @@ wimlib_realloc(void *ptr, size_t size)
 void *
 wimlib_calloc(size_t nmemb, size_t size)
 {
-	size_t total_size = nmemb * size;
-	void *p = MALLOC(total_size);
+	return wimlib_zalloc(nmemb * size);
+}
+
+void *
+wimlib_zalloc(size_t size)
+{
+	void *p = MALLOC(size);
 	if (p)
-		p = memset(p, 0, total_size);
+		p = memset(p, 0, size);
 	return p;
 }
 

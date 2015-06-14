@@ -178,8 +178,8 @@ do_iterate_dir_tree(WIMStruct *wim,
 	int ret = WIMLIB_ERR_NOMEM;
 
 
-	wdentry = CALLOC(1, sizeof(struct wimlib_dir_entry) +
-				  (1 + dentry->d_inode->i_num_streams) *
+	wdentry = ZALLOC(sizeof(struct wimlib_dir_entry) +
+				(1 + dentry->d_inode->i_num_streams) *
 					sizeof(struct wimlib_stream_entry));
 	if (wdentry == NULL)
 		goto out;

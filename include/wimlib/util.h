@@ -53,6 +53,9 @@ wimlib_realloc(void *ptr, size_t size);
 extern void *
 wimlib_calloc(size_t nmemb, size_t size) _malloc_attribute;
 
+extern void *
+wimlib_zalloc(size_t size) _malloc_attribute;
+
 extern char *
 wimlib_strdup(const char *str) _malloc_attribute;
 
@@ -74,6 +77,7 @@ memdup(const void *mem, size_t size) _malloc_attribute;
 #define FREE		wimlib_free_memory
 #define REALLOC		wimlib_realloc
 #define CALLOC		wimlib_calloc
+#define ZALLOC		wimlib_zalloc
 #define STRDUP		wimlib_strdup
 #define WCSDUP		wimlib_wcsdup
 #define ALIGNED_MALLOC	wimlib_aligned_malloc
