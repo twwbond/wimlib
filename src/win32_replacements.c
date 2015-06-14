@@ -373,13 +373,13 @@ realpath(const wchar_t *path, wchar_t *resolved_path)
 		goto fail_win32;
 	}
 
-	resolved_path = MALLOC(ret * sizeof(wchar_t));
+	resolved_path = malloc(ret * sizeof(wchar_t));
 	if (!resolved_path)
 		goto out;
 	ret = GetFullPathNameW(path, ret, resolved_path, NULL);
 	if (!ret) {
 		err = GetLastError();
-		FREE(resolved_path);
+		free(resolved_path);
 		resolved_path = NULL;
 		goto fail_win32;
 	}
@@ -605,7 +605,7 @@ win32_wglob(const wchar_t *pattern, int flags,
 			wchar_t **pathv;
 
 			new_nspaces = nspaces * 2 + 1;
-			pathv = REALLOC(pglob->gl_pathv,
+			pathv = realloc(pglob->gl_pathv,
 					new_nspaces * sizeof(pglob->gl_pathv[0]));
 			if (!pathv)
 				goto oom;
@@ -615,7 +615,7 @@ win32_wglob(const wchar_t *pattern, int flags,
 		size_t filename_len = wcslen(dat.cFileName);
 		size_t len_needed = prefix_len + filename_len;
 
-		path = MALLOC((len_needed + 1) * sizeof(wchar_t));
+		path = malloc((len_needed + 1) * sizeof(wchar_t));
 		if (!path)
 			goto oom;
 
@@ -648,8 +648,8 @@ globfree(glob_t *pglob)
 {
 	size_t i;
 	for (i = 0; i < pglob->gl_pathc; i++)
-		FREE(pglob->gl_pathv[i]);
-	FREE(pglob->gl_pathv);
+		free(pglob->gl_pathv[i]);
+	free(pglob->gl_pathv);
 }
 
 /* Replacement for fopen(path, "a") that doesn't prevent other processes from

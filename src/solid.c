@@ -174,7 +174,7 @@ sort_blob_list_for_solid_compression(struct list_head *blob_list)
 
 	/* Allocate a temporary hash table for mapping blob hash => blob  */
 	blob_table.capacity = num_blobs;
-	blob_table.table = CALLOC(blob_table.capacity,
+	blob_table.table = calloc(blob_table.capacity,
 				  sizeof(blob_table.table[0]));
 	if (!blob_table.table)
 		return WIMLIB_ERR_NOMEM;
@@ -234,7 +234,7 @@ sort_blob_list_for_solid_compression(struct list_head *blob_list)
 
 out:
 	list_for_each_entry(blob, blob_list, write_blobs_list)
-		FREE(blob->solid_sort_name);
-	FREE(blob_table.table);
+		free(blob->solid_sort_name);
+	free(blob_table.table);
 	return ret;
 }

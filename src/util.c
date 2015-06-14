@@ -44,71 +44,8 @@
  * Memory allocation
  *******************/
 
-static void *(*wimlib_malloc_func) (size_t)	    = malloc;
-static void  (*wimlib_free_func)   (void *)	    = free;
-static void *(*wimlib_realloc_func)(void *, size_t) = realloc;
-
 void *
-wimlib_malloc(size_t size)
-{
-	void *ptr;
-
-retry:
-	ptr = (*wimlib_malloc_func)(size);
-	if (unlikely(!ptr)) {
-		if (size == 0) {
-			size = 1;
-			goto retry;
-		}
-	}
-	return ptr;
-}
-
-void
-wimlib_free_memory(void *ptr)
-{
-	(*wimlib_free_func)(ptr);
-}
-
-void *
-wimlib_realloc(void *ptr, size_t size)
-{
-	if (size == 0)
-		size = 1;
-	return (*wimlib_realloc_func)(ptr, size);
-}
-
-void *
-wimlib_calloc(size_t nmemb, size_t size)
-{
-	return wimlib_zalloc(nmemb * size);
-}
-
-void *
-wimlib_zalloc(size_t size)
-{
-	void *p = MALLOC(size);
-	if (p)
-		p = memset(p, 0, size);
-	return p;
-}
-
-char *
-wimlib_strdup(const char *str)
-{
-	return memdup(str, strlen(str) + 1);
-}
-
-#ifdef __WIN32__
-wchar_t *
-wimlib_wcsdup(const wchar_t *str)
-{
-	return memdup(str, (wcslen(str) + 1) * sizeof(wchar_t));
-}
-#endif
-
-void *
-wimlib_aligned_malloc(size_t size, size_t alignment)
+aligned_malloc(size_t size, size_t alignment)
 {
 	wimlib_assert(alignment != 0 && is_power_of_2(alignment) &&
 		      alignment <= 4096);
@@ -117,7 +54,7 @@ wimlib_aligned_malloc(size_t size, size_t alignment)
 	char *ptr = NULL;
 	char *raw_ptr;
 
-	raw_ptr = MALLOC(mask + sizeof(size_t) + size);
+	raw_ptr = malloc(mask + sizeof(size_t) + size);
 	if (raw_ptr) {
 		ptr = (char *)raw_ptr + sizeof(size_t);
 		ptr = (void *)(((uintptr_t)ptr + mask) & ~mask);
@@ -127,34 +64,19 @@ wimlib_aligned_malloc(size_t size, size_t alignment)
 }
 
 void
-wimlib_aligned_free(void *ptr)
+aligned_free(void *ptr)
 {
 	if (ptr)
-		FREE((char *)ptr - *((size_t *)ptr - 1));
+		free((char *)ptr - *((size_t *)ptr - 1));
 }
 
 void *
 memdup(const void *mem, size_t size)
 {
-	void *ptr = MALLOC(size);
+	void *ptr = malloc(size);
 	if (ptr)
 		ptr = memcpy(ptr, mem, size);
 	return ptr;
-}
-
-/* API function documented in wimlib.h  */
-WIMLIBAPI int
-wimlib_set_memory_allocator(void *(*malloc_func)(size_t),
-			    void (*free_func)(void *),
-			    void *(*realloc_func)(void *, size_t))
-{
-	wimlib_malloc_func  = malloc_func  ? malloc_func  : malloc;
-	wimlib_free_func    = free_func    ? free_func    : free;
-	wimlib_realloc_func = realloc_func ? realloc_func : realloc;
-
-	xml_set_memory_allocator(wimlib_malloc_func, wimlib_free_func,
-				 wimlib_realloc_func);
-	return 0;
 }
 
 /*******************

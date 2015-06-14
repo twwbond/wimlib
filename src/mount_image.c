@@ -259,7 +259,7 @@ alloc_wimfs_fd(struct wim_inode *inode,
 		if (num_new_fds == 0)
 			return -EMFILE;
 
-		fds = REALLOC(inode->i_fds,
+		fds = realloc(inode->i_fds,
 			      (inode->i_num_allocated_fds + num_new_fds) *
 			        sizeof(fds[0]));
 		if (!fds)
@@ -279,7 +279,7 @@ alloc_wimfs_fd(struct wim_inode *inode,
 	for (i = inode->i_next_fd; inode->i_fds[i]; i++)
 		;
 
-	fd = MALLOC(sizeof(*fd));
+	fd = malloc(sizeof(*fd));
 	if (!fd)
 		return -ENOMEM;
 
@@ -325,7 +325,7 @@ close_wimfs_fd(struct wimfs_fd *fd)
 	inode->i_fds[fd->f_idx] = NULL;
 	if (fd->f_idx < inode->i_next_fd)
 		inode->i_next_fd = fd->f_idx;
-	FREE(fd);
+	free(fd);
 	inode_dec_num_opened_fds(inode);
 	return ret;
 }
@@ -660,7 +660,7 @@ create_staging_file(const struct wimfs_context *ctx, char **name_ret)
 	char *name;
 	int fd;
 
-	name = MALLOC(STAGING_FILE_NAME_LEN + 1);
+	name = malloc(STAGING_FILE_NAME_LEN + 1);
 	if (!name)
 		return -1;
 	name[STAGING_FILE_NAME_LEN] = '\0';
@@ -673,7 +673,7 @@ retry:
 		if (unlikely(errno == EEXIST))
 			/* Try again with another name.  */
 			goto retry;
-		FREE(name);
+		free(name);
 	} else {
 		*name_ret = name;
 	}
@@ -812,7 +812,7 @@ out_revert_fd_changes:
 	free_blob_descriptor(new_blob);
 out_delete_staging_file:
 	unlinkat(ctx->staging_dir_fd, staging_file_name, 0);
-	FREE(staging_file_name);
+	free(staging_file_name);
 	return ret;
 }
 
@@ -843,7 +843,7 @@ make_staging_dir_at(int parent_dir_fd, const char *wim_basename,
 	wim_basename_len = strlen(wim_basename);
 	staging_dir_name_len = wim_basename_len + sizeof(common_suffix) +
 			       random_suffix_len;
-	staging_dir_name = MALLOC(staging_dir_name_len + 1);
+	staging_dir_name = malloc(staging_dir_name_len + 1);
 	if (!staging_dir_name)
 		return -1;
 
@@ -868,7 +868,7 @@ make_staging_dir_at(int parent_dir_fd, const char *wim_basename,
 err2:
 	unlinkat(parent_dir_fd, staging_dir_name, AT_REMOVEDIR);
 err1:
-	FREE(staging_dir_name);
+	free(staging_dir_name);
 	return -1;
 }
 
@@ -944,7 +944,7 @@ delete_staging_dir(struct wimfs_context *ctx)
 	}
 	if (unlinkat(ctx->parent_dir_fd, ctx->staging_dir_name, AT_REMOVEDIR))
 		WARNING_WITH_ERRNO("Could not delete staging directory");
-	FREE(ctx->staging_dir_name);
+	free(ctx->staging_dir_name);
 	close(ctx->parent_dir_fd);
 }
 
@@ -1473,21 +1473,21 @@ wimfs_listxattr(const char *path, char *list, size_t size)
 			return -errno;
 
 		if (unlikely(INT_MAX - total_size < stream_name_mbs_nbytes + 6)) {
-			FREE(stream_name_mbs);
+			free(stream_name_mbs);
 			return -EFBIG;
 		}
 
 		total_size += stream_name_mbs_nbytes + 6;
 		if (size) {
 			if (end - p < stream_name_mbs_nbytes + 6) {
-				FREE(stream_name_mbs);
+				free(stream_name_mbs);
 				return -ERANGE;
 			}
 			p = mempcpy(p, "user.", 5);
 			p = mempcpy(p, stream_name_mbs, stream_name_mbs_nbytes);
 			*p++ = '\0';
 		}
-		FREE(stream_name_mbs);
+		free(stream_name_mbs);
 	}
 	return total_size;
 }
@@ -1720,7 +1720,7 @@ wimfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			return -errno;
 
 		ret = filler(buf, name, NULL, 0);
-		FREE(name);
+		free(name);
 		if (ret)
 			return ret;
 	}
@@ -2302,7 +2302,7 @@ wimlib_mount_image(WIMStruct *wim, int image, const char *dir,
 	/* Cleanup and return.  */
 	if (ret)
 		ret = WIMLIB_ERR_FUSE;
-	FREE(ctx.mountpoint_abspath);
+	free(ctx.mountpoint_abspath);
 	release_extra_refcnts(&ctx);
 	if (mount_flags & WIMLIB_MOUNT_FLAG_READWRITE)
 		delete_staging_dir(&ctx);

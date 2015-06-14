@@ -706,7 +706,7 @@ unix_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 	path_max = unix_compute_path_max(dentry_list, ctx);
 
 	for (unsigned i = 0; i < NUM_PATHBUFS; i++) {
-		ctx->pathbufs[i] = MALLOC(path_max);
+		ctx->pathbufs[i] = malloc(path_max);
 		if (!ctx->pathbufs[i]) {
 			ret = WIMLIB_ERR_NOMEM;
 			goto out;
@@ -781,8 +781,8 @@ unix_extract(struct list_head *dentry_list, struct apply_ctx *_ctx)
 	}
 out:
 	for (unsigned i = 0; i < NUM_PATHBUFS; i++)
-		FREE(ctx->pathbufs[i]);
-	FREE(ctx->target_abspath);
+		free(ctx->pathbufs[i]);
+	free(ctx->target_abspath);
 	return ret;
 }
 

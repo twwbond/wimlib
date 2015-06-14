@@ -77,7 +77,7 @@ put_ntfs_volume(struct ntfs_volume_wrapper *volume)
 {
 	if (--volume->refcnt == 0) {
 		ntfs_umount(volume->vol, FALSE);
-		FREE(volume);
+		free(volume);
 	}
 }
 
@@ -158,8 +158,8 @@ void
 free_ntfs_location(struct ntfs_location *loc)
 {
 	put_ntfs_volume(loc->volume);
-	FREE(loc->attr_name);
-	FREE(loc);
+	free(loc->attr_name);
+	free(loc);
 }
 
 struct ntfs_location *
@@ -177,7 +177,7 @@ clone_ntfs_location(const struct ntfs_location *loc)
 	return new;
 
 err1:
-	FREE(new);
+	free(new);
 err0:
 	return NULL;
 }
@@ -309,7 +309,7 @@ scan_ntfs_attr(struct wim_inode *inode,
 			goto out_cleanup;
 		}
 
-		blob->ntfs_loc = ZALLOC(sizeof(struct ntfs_location));
+		blob->ntfs_loc = zalloc(sizeof(struct ntfs_location));
 		if (unlikely(!blob->ntfs_loc)) {
 			ret = WIMLIB_ERR_NOMEM;
 			goto out_cleanup;
@@ -348,7 +348,7 @@ scan_ntfs_attr(struct wim_inode *inode,
 	ret = 0;
 out_cleanup:
 	free_blob_descriptor(blob);
-	FREE(stream_name);
+	free(stream_name);
 	return ret;
 }
 
@@ -418,8 +418,8 @@ retry:
 
 	if (unlikely(ret > avail_size)) {
 		if (unlikely(buf != _buf))
-			FREE(buf);
-		buf = MALLOC(ret);
+			free(buf);
+		buf = malloc(ret);
 		if (!buf) {
 			ret = WIMLIB_ERR_NOMEM;
 			goto out;
@@ -439,7 +439,7 @@ retry:
 	ret = 0;
 out:
 	if (unlikely(buf != _buf))
-		FREE(buf);
+		free(buf);
 	return ret;
 }
 
@@ -473,7 +473,7 @@ insert_dos_name(struct dos_name_map *map, const ntfschar *dos_name,
 {
 	struct dos_name_node *new_node;
 
-	new_node = MALLOC(sizeof(struct dos_name_node));
+	new_node = malloc(sizeof(struct dos_name_node));
 	if (!new_node)
 		return WIMLIB_ERR_NOMEM;
 
@@ -495,7 +495,7 @@ insert_dos_name(struct dos_name_map *map, const ntfschar *dos_name,
 		 * multiple DOS names, and we only should get each DOS name
 		 * entry once from the ntfs_readdir() calls. */
 		WARNING("NTFS inode %"PRIu64" has multiple DOS names", ntfs_ino);
-		FREE(new_node);
+		free(new_node);
 	}
 	return 0;
 }
@@ -545,7 +545,7 @@ destroy_dos_name_map(struct dos_name_map *map)
 	struct dos_name_node *node;
 	avl_tree_for_each_in_postorder(node, map->root,
 				       struct dos_name_node, index_node)
-		FREE(node);
+		free(node);
 }
 
 struct readdir_ctx {
@@ -609,7 +609,7 @@ filldir(void *_ctx, const ntfschar *name, const int name_nchars,
 						  ctx->volume, ctx->params);
 	attach_scanned_tree(ctx->parent, child, ctx->params->blob_table);
 out_free_mbs_name:
-	FREE(mbs_name);
+	free(mbs_name);
 out:
 	ctx->ret = ret;
 	return ret;
@@ -800,7 +800,7 @@ ntfs_3g_build_dentry_tree(struct wim_dentry **root_ret,
 	char *path;
 	int ret;
 
-	volume = MALLOC(sizeof(struct ntfs_volume_wrapper));
+	volume = malloc(sizeof(struct ntfs_volume_wrapper));
 	if (!volume)
 		return WIMLIB_ERR_NOMEM;
 
@@ -824,7 +824,7 @@ ntfs_3g_build_dentry_tree(struct wim_dentry **root_ret,
 	if (!vol) {
 		ERROR_WITH_ERRNO("Failed to mount NTFS volume \"%s\" read-only",
 				 device);
-		FREE(volume);
+		free(volume);
 		return WIMLIB_ERR_NTFS_3G;
 	}
 
@@ -840,7 +840,7 @@ ntfs_3g_build_dentry_tree(struct wim_dentry **root_ret,
 
 	/* Currently we assume that all the paths fit into this length and there
 	 * is no check for overflow.  */
-	path = MALLOC(32768);
+	path = malloc(32768);
 	if (!path) {
 		ret = WIMLIB_ERR_NOMEM;
 		goto out_put_ntfs_volume;
@@ -851,7 +851,7 @@ ntfs_3g_build_dentry_tree(struct wim_dentry **root_ret,
 	ret = ntfs_3g_build_dentry_tree_recursive(root_ret, FILE_root, path, 1,
 						  FILE_NAME_POSIX, volume,
 						  params);
-	FREE(path);
+	free(path);
 out_put_ntfs_volume:
 	ntfs_index_ctx_put(vol->secure_xsii);
 	ntfs_index_ctx_put(vol->secure_xsdh);

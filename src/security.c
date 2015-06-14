@@ -42,7 +42,7 @@ struct wim_security_data_disk {
 struct wim_security_data *
 new_wim_security_data(void)
 {
-	return ZALLOC(sizeof(struct wim_security_data));
+	return zalloc(sizeof(struct wim_security_data));
 }
 
 /*
@@ -123,7 +123,7 @@ read_wim_security_data(const u8 *buf, size_t buf_len,
 		goto out_descriptors_ready;
 
 	/* Allocate a new buffer for the sizes array */
-	sd->sizes = MALLOC(sizes_size);
+	sd->sizes = malloc(sizes_size);
 	if (!sd->sizes)
 		goto out_of_memory;
 
@@ -138,7 +138,7 @@ read_wim_security_data(const u8 *buf, size_t buf_len,
 
 	/* Allocate the array of pointers to the security descriptors, then read
 	 * them into separate buffers. */
-	sd->descriptors = CALLOC(sd->num_entries, sizeof(sd->descriptors[0]));
+	sd->descriptors = calloc(sd->num_entries, sizeof(sd->descriptors[0]));
 	if (!sd->descriptors)
 		goto out_of_memory;
 
@@ -212,10 +212,10 @@ free_wim_security_data(struct wim_security_data *sd)
 		u32 num_entries  = sd->num_entries;
 		if (descriptors)
 			while (num_entries--)
-				FREE(*descriptors++);
-		FREE(sd->sizes);
-		FREE(sd->descriptors);
-		FREE(sd);
+				free(*descriptors++);
+		free(sd->sizes);
+		free(sd->descriptors);
+		free(sd);
 	}
 }
 
@@ -234,7 +234,7 @@ free_sd_tree(struct avl_tree_node *node)
 	if (node) {
 		free_sd_tree(node->left);
 		free_sd_tree(node->right);
-		FREE(SD_NODE(node));
+		free(SD_NODE(node));
 	}
 }
 
@@ -245,7 +245,7 @@ rollback_new_security_descriptors(struct wim_sd_set *sd_set)
 	u8 **descriptors = sd->descriptors + sd_set->orig_num_entries;
 	u32 num_entries  = sd->num_entries - sd_set->orig_num_entries;
 	while (num_entries--)
-		FREE(*descriptors++);
+		free(*descriptors++);
 	sd->num_entries = sd_set->orig_num_entries;
 }
 
@@ -316,7 +316,7 @@ sd_set_add_sd(struct wim_sd_set *sd_set, const char *descriptor, size_t size)
 	/* Need to add a new security descriptor */
 	security_id = -1;
 
-	new = MALLOC(sizeof(*new));
+	new = malloc(sizeof(*new));
 	if (!new)
 		goto out;
 
@@ -331,12 +331,12 @@ sd_set_add_sd(struct wim_sd_set *sd_set, const char *descriptor, size_t size)
 	/* There typically are only a few dozen security descriptors in a
 	 * directory tree, so expanding the array of security descriptors by
 	 * only 1 extra space each time should not be a problem. */
-	descriptors = REALLOC(sd->descriptors,
+	descriptors = realloc(sd->descriptors,
 			      (sd->num_entries + 1) * sizeof(sd->descriptors[0]));
 	if (!descriptors)
 		goto out_free_descr;
 	sd->descriptors = descriptors;
-	sizes = REALLOC(sd->sizes,
+	sizes = realloc(sd->sizes,
 			(sd->num_entries + 1) * sizeof(sd->sizes[0]));
 	if (!sizes)
 		goto out_free_descr;
@@ -349,9 +349,9 @@ sd_set_add_sd(struct wim_sd_set *sd_set, const char *descriptor, size_t size)
 	security_id = new->security_id;
 	goto out;
 out_free_descr:
-	FREE(descr_copy);
+	free(descr_copy);
 out_free_node:
-	FREE(new);
+	free(new);
 out:
 	return security_id;
 }
@@ -373,7 +373,7 @@ init_sd_set(struct wim_sd_set *sd_set, struct wim_security_data *sd)
 	for (u32 i = 0; i < sd->num_entries; i++) {
 		struct sd_node *new;
 
-		new = MALLOC(sizeof(struct sd_node));
+		new = malloc(sizeof(struct sd_node));
 		if (!new) {
 			ret = WIMLIB_ERR_NOMEM;
 			goto out_destroy_sd_set;
@@ -381,7 +381,7 @@ init_sd_set(struct wim_sd_set *sd_set, struct wim_security_data *sd)
 		sha1_buffer(sd->descriptors[i], sd->sizes[i], new->hash);
 		new->security_id = i;
 		if (!insert_sd_node(sd_set, new))
-			FREE(new); /* Ignore duplicate security descriptor */
+			free(new); /* Ignore duplicate security descriptor */
 	}
 	ret = 0;
 	goto out;

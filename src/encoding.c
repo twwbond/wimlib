@@ -80,7 +80,7 @@ get_iconv(struct iconv_list_head *head)
 					 head->from_encoding, head->to_encoding);
 			cd_p = NULL;
 		} else {
-			i = MALLOC(sizeof(struct iconv_node));
+			i = malloc(sizeof(struct iconv_node));
 			if (i) {
 				i->head = head;
 				i->cd = cd;
@@ -140,7 +140,7 @@ varname1##_to_##varname2##_nbytes(const chartype1 *in, size_t in_nbytes,\
 		buf = alloca(bufsize);					\
 		buf_onheap = false;					\
 	} else {							\
-		buf = MALLOC(bufsize);					\
+		buf = malloc(bufsize);					\
 		if (!buf)						\
 			return WIMLIB_ERR_NOMEM;			\
 		buf_onheap = true;					\
@@ -163,7 +163,7 @@ varname1##_to_##varname2##_nbytes(const chartype1 *in, size_t in_nbytes,\
 	}								\
 	put_iconv(cd);							\
 	if (buf_onheap)							\
-		FREE(buf);						\
+		free(buf);						\
 	return ret;							\
 }									\
 									\
@@ -207,7 +207,7 @@ varname1##_to_##varname2(const chartype1 *in, size_t in_nbytes,		\
 	if (earlyreturn_on_utf8_locale && wimlib_mbs_is_utf8) {		\
 		earlyreturn_expr;					\
 		/* Out same as in */					\
-		out = MALLOC(in_nbytes + sizeof(chartype2));		\
+		out = malloc(in_nbytes + sizeof(chartype2));		\
 		if (!out)						\
 			return WIMLIB_ERR_NOMEM;			\
 		memcpy(out, in, in_nbytes);				\
@@ -222,13 +222,13 @@ varname1##_to_##varname2(const chartype1 *in, size_t in_nbytes,		\
 	if (ret)							\
 		return ret;						\
 									\
-	out = MALLOC(out_nbytes + sizeof(chartype2));			\
+	out = malloc(out_nbytes + sizeof(chartype2));			\
 	if (!out)							\
 		return WIMLIB_ERR_NOMEM;				\
 									\
 	ret = varname1##_to_##varname2##_buf(in, in_nbytes, out);	\
 	if (ret) {							\
-		FREE(out);						\
+		free(out);						\
 	} else {							\
 		*out_ret = out;						\
 		*out_nbytes_ret = out_nbytes;				\
@@ -373,7 +373,7 @@ iconv_cleanup(struct iconv_list_head *head)
 		i = container_of(head->list.next, struct iconv_node, list);
 		list_del(&i->list);
 		iconv_close(i->cd);
-		FREE(i);
+		free(i);
 	}
 }
 
@@ -573,7 +573,7 @@ cmp_utf16le_strings_z(const utf16lechar *s1, const utf16lechar *s2,
 utf16lechar *
 utf16le_dupz(const void *ustr, size_t usize)
 {
-	utf16lechar *dup = MALLOC(usize + sizeof(utf16lechar));
+	utf16lechar *dup = malloc(usize + sizeof(utf16lechar));
 	if (dup) {
 		memcpy(dup, ustr, usize);
 		dup[usize / sizeof(utf16lechar)] = 0;

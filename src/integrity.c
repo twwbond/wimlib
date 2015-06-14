@@ -130,7 +130,7 @@ read_integrity_table(WIMStruct *wim, u64 num_checked_bytes,
 	    table->chunk_size == 0 ||
 	    table->num_entries != DIV_ROUND_UP(num_checked_bytes, table->chunk_size))
 	{
-		FREE(table);
+		free(table);
 		goto invalid;
 	}
 
@@ -207,7 +207,7 @@ calculate_integrity_table(struct filedes *in_fd,
 
 	size_t new_table_size = 12 + new_num_chunks * SHA1_HASH_SIZE;
 
-	struct integrity_table *new_table = MALLOC(new_table_size);
+	struct integrity_table *new_table = malloc(new_table_size);
 	if (!new_table)
 		return WIMLIB_ERR_NOMEM;
 	new_table->num_entries = new_num_chunks;
@@ -262,7 +262,7 @@ calculate_integrity_table(struct filedes *in_fd,
 	return 0;
 
 out_free_new_table:
-	FREE(new_table);
+	free(new_table);
 	return ret;
 }
 
@@ -328,7 +328,7 @@ write_integrity_table(WIMStruct *wim,
 					     &wim->out_hdr.integrity_table_reshdr,
 					     NULL,
 					     0);
-	FREE(new_table);
+	free(new_table);
 	return ret;
 }
 
@@ -449,6 +449,6 @@ check_wim_integrity(WIMStruct *wim)
 		return ret;
 	ret = verify_integrity(&wim->in_fd, wim->filename, table,
 			       bytes_to_check, wim->progfunc, wim->progctx);
-	FREE(table);
+	free(table);
 	return ret;
 }

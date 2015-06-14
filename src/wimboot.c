@@ -113,7 +113,7 @@ query_partition_and_disk_info(const wchar_t *path,
 	extents_size = sizeof(VOLUME_DISK_EXTENTS);
 	for (;;) {
 		extents_size += 4 * sizeof(DISK_EXTENT);
-		extents = MALLOC(extents_size);
+		extents = malloc(extents_size);
 		if (!extents) {
 			ret = WIMLIB_ERR_NOMEM;
 			goto out;
@@ -129,7 +129,7 @@ query_partition_and_disk_info(const wchar_t *path,
 			ret = WIMLIB_ERR_READ;
 			goto out;
 		}
-		FREE(extents);
+		free(extents);
 	}
 
 	CloseHandle(h);
@@ -157,7 +157,7 @@ query_partition_and_disk_info(const wchar_t *path,
 	drive_info_size = sizeof(DRIVE_LAYOUT_INFORMATION_EX);
 	for (;;) {
 		drive_info_size += 4 * sizeof(PARTITION_INFORMATION_EX);
-		drive_info = MALLOC(drive_info_size);
+		drive_info = malloc(drive_info_size);
 		if (!drive_info) {
 			ret = WIMLIB_ERR_NOMEM;
 			goto out;
@@ -172,7 +172,7 @@ query_partition_and_disk_info(const wchar_t *path,
 			ret = WIMLIB_ERR_READ;
 			goto out;
 		}
-		FREE(drive_info);
+		free(drive_info);
 	}
 
 	*drive_info_ret = *drive_info;  /* doesn't include partitions */
@@ -211,8 +211,8 @@ query_partition_and_disk_info(const wchar_t *path,
 
 	ret = 0;
 out:
-	FREE(extents);
-	FREE(drive_info);
+	free(extents);
+	free(drive_info);
 	if (h != INVALID_HANDLE_VALUE)
 		CloseHandle(h);
 	return ret;
@@ -520,7 +520,7 @@ prepare_wimoverlay_dat(const struct WimOverlay_dat_header *old_hdr,
 	if (ret)
 		return ret;
 
-	buf = MALLOC(new_contents_size);
+	buf = malloc(new_contents_size);
 	if (!buf)
 		return WIMLIB_ERR_NOMEM;
 
@@ -607,7 +607,7 @@ retry:
 
 	contents = NULL;
 	if (!info.nFileSizeHigh)
-		contents = MALLOC(info.nFileSizeLow);
+		contents = malloc(info.nFileSizeLow);
 	if (!contents) {
 		ERROR("\"%ls\": File is too large to fit into memory", path);
 		CloseHandle(h);
@@ -767,7 +767,7 @@ retry:
 	return 0;
 
 out_free_contents:
-	FREE(contents);
+	free(contents);
 	return ret;
 }
 
@@ -820,7 +820,7 @@ update_wimoverlay_manually(const wchar_t *drive, const wchar_t *wim_path,
 	ret = prepare_wimoverlay_dat(old_contents, wim_path, wim_guid, image,
 				     &new_contents, &new_contents_size,
 				     &new_data_source_id);
-	FREE(old_contents);
+	free(old_contents);
 	if (ret)
 		goto out;
 
@@ -855,7 +855,7 @@ update_wimoverlay_manually(const wchar_t *drive, const wchar_t *wim_path,
 		ret = WIMLIB_ERR_RENAME;
 	}
 out_free_new_contents:
-	FREE(new_contents);
+	free(new_contents);
 out:
 	if (ret == WIMLIB_ERR_UNSUPPORTED) {
 		ERROR("Please report to developer ("PACKAGE_BUGREPORT").\n"
@@ -961,7 +961,7 @@ wimboot_alloc_data_source_id(const wchar_t *wim_path,
 		 sizeof(struct wim_provider_add_overlay_input) +
 		 wim_file_name_length;
 
-	in = MALLOC(insize);
+	in = malloc(insize);
 	if (!in) {
 		ret = WIMLIB_ERR_NOMEM;
 		goto out;
@@ -1029,7 +1029,7 @@ retry_ioctl:
 out_close_handle:
 	CloseHandle(h);
 out_free_in:
-	FREE(in);
+	free(in);
 out:
 	if (ret == WIMLIB_ERR_UNSUPPORTED) {
 	#if 0

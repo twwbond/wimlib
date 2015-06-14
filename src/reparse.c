@@ -319,7 +319,7 @@ wim_inode_readlink(const struct wim_inode *inode, char *buf, size_t bufsize,
 		target_len = 1;
 	}
 	copy(&buf_ptr, &bufsize, target, target_len);
-	FREE(target_buffer);
+	free(target_buffer);
 	return buf_ptr - buf;
 }
 
@@ -432,7 +432,7 @@ wim_inode_set_symlink(struct wim_inode *inode, const char *_target,
 
 	ret = 0;
 out_free_target:
-	FREE(target);
+	free(target);
 	return ret;
 }
 

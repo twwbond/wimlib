@@ -141,7 +141,7 @@ reference_template_file(struct wim_inode *inode, WIMStruct *wim,
 				     wim->blob_table, template_wim->blob_table);
 	}
 
-	FREE(dentry->d_full_path);
+	free(dentry->d_full_path);
 	dentry->d_full_path = NULL;
 	return 0;
 }

@@ -135,7 +135,7 @@ canonicalize_wim_path(const tchar *wim_path)
 	if (!in)
 		in = T("");
 
-	result = MALLOC((1 + tstrlen(in) + 1) * sizeof(result[0]));
+	result = malloc((1 + tstrlen(in) + 1) * sizeof(result[0]));
 	if (!result)
 		return NULL;
 

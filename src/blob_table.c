@@ -58,13 +58,13 @@ new_blob_table(size_t capacity)
 	struct blob_table *table;
 	struct hlist_head *array;
 
-	table = MALLOC(sizeof(struct blob_table));
+	table = malloc(sizeof(struct blob_table));
 	if (table == NULL)
 		goto oom;
 
-	array = CALLOC(capacity, sizeof(array[0]));
+	array = calloc(capacity, sizeof(array[0]));
 	if (array == NULL) {
-		FREE(table);
+		free(table);
 		goto oom;
 	}
 
@@ -91,8 +91,8 @@ free_blob_table(struct blob_table *table)
 {
 	if (table) {
 		for_blob_in_table(table, do_free_blob_descriptor, NULL);
-		FREE(table->array);
-		FREE(table);
+		free(table->array);
+		free(table);
 	}
 }
 
@@ -100,7 +100,7 @@ struct blob_descriptor *
 new_blob_descriptor(void)
 {
 	BUILD_BUG_ON(BLOB_NONEXISTENT != 0);
-	return ZALLOC(sizeof(struct blob_descriptor));
+	return zalloc(sizeof(struct blob_descriptor));
 }
 
 struct blob_descriptor *
@@ -127,7 +127,7 @@ clone_blob_descriptor(const struct blob_descriptor *old)
 		BUILD_BUG_ON((void*)&old->file_on_disk !=
 			     (void*)&old->staging_file_name);
 #endif
-		new->file_on_disk = TSTRDUP(old->file_on_disk);
+		new->file_on_disk = tstrdup(old->file_on_disk);
 		if (new->file_on_disk == NULL)
 			goto out_free;
 		break;
@@ -158,7 +158,7 @@ blob_release_location(struct blob_descriptor *blob)
 	case BLOB_IN_WIM:
 		list_del(&blob->rdesc_node);
 		if (list_empty(&blob->rdesc->blob_list))
-			FREE(blob->rdesc);
+			free(blob->rdesc);
 		break;
 	case BLOB_IN_FILE_ON_DISK:
 #ifdef __WIN32__
@@ -173,7 +173,7 @@ blob_release_location(struct blob_descriptor *blob)
 	case BLOB_IN_ATTACHED_BUFFER:
 		BUILD_BUG_ON((void*)&blob->file_on_disk !=
 			     (void*)&blob->attached_buffer);
-		FREE(blob->file_on_disk);
+		free(blob->file_on_disk);
 		break;
 #ifdef WITH_NTFS_3G
 	case BLOB_IN_NTFS_VOLUME:
@@ -189,7 +189,7 @@ free_blob_descriptor(struct blob_descriptor *blob)
 {
 	if (blob) {
 		blob_release_location(blob);
-		FREE(blob);
+		free(blob);
 	}
 }
 
@@ -303,7 +303,7 @@ enlarge_blob_table(struct blob_table *table)
 
 	old_capacity = table->capacity;
 	new_capacity = old_capacity * 2;
-	new_array = CALLOC(new_capacity, sizeof(struct hlist_head));
+	new_array = calloc(new_capacity, sizeof(struct hlist_head));
 	if (new_array == NULL)
 		return;
 	old_array = table->array;
@@ -313,7 +313,7 @@ enlarge_blob_table(struct blob_table *table)
 	for (i = 0; i < old_capacity; i++)
 		hlist_for_each_entry_safe(blob, tmp, &old_array[i], hash_list)
 			blob_table_insert_raw(table, blob);
-	FREE(old_array);
+	free(old_array);
 }
 
 /* Insert a blob descriptor into the blob table.  */
@@ -463,7 +463,7 @@ sort_blob_list(struct list_head *blob_list, size_t list_head_offset,
 		return 0;
 
 	array_size = num_blobs * sizeof(array[0]);
-	array = MALLOC(array_size);
+	array = malloc(array_size);
 	if (array == NULL)
 		return WIMLIB_ERR_NOMEM;
 
@@ -480,7 +480,7 @@ sort_blob_list(struct list_head *blob_list, size_t list_head_offset,
 		list_add_tail((struct list_head*)
 			       ((u8*)array[i] + list_head_offset), blob_list);
 	}
-	FREE(array);
+	free(array);
 	return 0;
 }
 
@@ -513,7 +513,7 @@ for_blob_in_table_sorted_by_sequential_order(struct blob_table *table,
 	size_t num_blobs = table->num_blobs;
 	int ret;
 
-	blob_array = MALLOC(num_blobs * sizeof(blob_array[0]));
+	blob_array = malloc(num_blobs * sizeof(blob_array[0]));
 	if (!blob_array)
 		return WIMLIB_ERR_NOMEM;
 	p = blob_array;
@@ -529,7 +529,7 @@ for_blob_in_table_sorted_by_sequential_order(struct blob_table *table,
 		if (ret)
 			break;
 	}
-	FREE(blob_array);
+	free(blob_array);
 	return ret;
 }
 
@@ -658,12 +658,12 @@ load_solid_info(WIMStruct *wim,
 	int ret;
 
 	num_rdescs = count_solid_resources(entries, num_remaining_entries);
-	rdescs = CALLOC(num_rdescs, sizeof(rdescs[0]));
+	rdescs = calloc(num_rdescs, sizeof(rdescs[0]));
 	if (!rdescs)
 		return WIMLIB_ERR_NOMEM;
 
 	for (i = 0; i < num_rdescs; i++) {
-		rdescs[i] = MALLOC(sizeof(struct wim_resource_descriptor));
+		rdescs[i] = malloc(sizeof(struct wim_resource_descriptor));
 		if (!rdescs[i]) {
 			ret = WIMLIB_ERR_NOMEM;
 			goto out_free_rdescs;
@@ -680,8 +680,8 @@ load_solid_info(WIMStruct *wim,
 
 out_free_rdescs:
 	for (i = 0; i < num_rdescs; i++)
-		FREE(rdescs[i]);
-	FREE(rdescs);
+		free(rdescs[i]);
+	free(rdescs);
 	return ret;
 }
 
@@ -716,8 +716,8 @@ free_solid_rdescs(struct wim_resource_descriptor **rdescs, size_t num_rdescs)
 	if (rdescs) {
 		for (size_t i = 0; i < num_rdescs; i++)
 			if (list_empty(&rdescs[i]->blob_list))
-				FREE(rdescs[i]);
-		FREE(rdescs);
+				free(rdescs[i]);
+		free(rdescs);
 	}
 }
 
@@ -943,7 +943,7 @@ read_blob_table(WIMStruct *wim)
 
 			/* Set up a resource descriptor for this blob.  */
 
-			rdesc = MALLOC(sizeof(struct wim_resource_descriptor));
+			rdesc = malloc(sizeof(struct wim_resource_descriptor));
 			if (!rdesc)
 				goto oom;
 
@@ -1082,7 +1082,7 @@ out:
 	free_blob_descriptor(cur_blob);
 	free_blob_table(table);
 out_free_buf:
-	FREE(buf);
+	free(buf);
 	return ret;
 }
 
@@ -1129,7 +1129,7 @@ write_blob_table_from_blob_list(struct list_head *blob_list,
 		}
 	}
 
-	table_buf = MALLOC(table_size);
+	table_buf = malloc(table_size);
 	if (table_buf == NULL) {
 		ERROR("Failed to allocate %zu bytes for temporary blob table",
 		      table_size);
@@ -1186,7 +1186,7 @@ write_blob_table_from_blob_list(struct list_head *blob_list,
 					     out_reshdr,
 					     NULL,
 					     write_resource_flags);
-	FREE(table_buf);
+	free(table_buf);
 	return ret;
 }
 

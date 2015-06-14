@@ -124,7 +124,7 @@ capture_sources_to_add_cmds(const struct wimlib_capture_source *sources,
 {
 	struct wimlib_update_command *add_cmds;
 
-	add_cmds = CALLOC(num_sources, sizeof(add_cmds[0]));
+	add_cmds = calloc(num_sources, sizeof(add_cmds[0]));
 	if (!add_cmds)
 		return NULL;
 
@@ -176,7 +176,7 @@ wimlib_add_image_multisource(WIMStruct *wim,
 	/* Delegate the work to wimlib_update_image().  */
 	ret = wimlib_update_image(wim, wim->hdr.image_count, add_cmds,
 				  num_sources, 0);
-	FREE(add_cmds);
+	free(add_cmds);
 	if (ret)
 		goto out_delete_image;
 

@@ -1068,7 +1068,7 @@ xpress_create_compressor(size_t max_bufsize, unsigned compression_level,
 	if (max_bufsize > XPRESS_MAX_BUFSIZE)
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	c = ALIGNED_MALLOC(xpress_get_compressor_size(max_bufsize, compression_level),
+	c = aligned_malloc(xpress_get_compressor_size(max_bufsize, compression_level),
 			   MATCHFINDER_ALIGNMENT);
 	if (!c)
 		goto oom0;
@@ -1077,7 +1077,7 @@ xpress_create_compressor(size_t max_bufsize, unsigned compression_level,
 	    !SUPPORT_NEAR_OPTIMAL_PARSING)
 	{
 
-		c->chosen_items = MALLOC(max_bufsize * sizeof(struct xpress_item));
+		c->chosen_items = malloc(max_bufsize * sizeof(struct xpress_item));
 		if (!c->chosen_items)
 			goto oom1;
 
@@ -1101,14 +1101,14 @@ xpress_create_compressor(size_t max_bufsize, unsigned compression_level,
 #if SUPPORT_NEAR_OPTIMAL_PARSING
 	else {
 
-		c->optimum_nodes = MALLOC((max_bufsize + 1) *
+		c->optimum_nodes = malloc((max_bufsize + 1) *
 					  sizeof(struct xpress_optimum_node));
-		c->match_cache = MALLOC(((max_bufsize * CACHE_RESERVE_PER_POS) +
+		c->match_cache = malloc(((max_bufsize * CACHE_RESERVE_PER_POS) +
 					 XPRESS_MAX_MATCH_LEN + max_bufsize) *
 					sizeof(struct lz_match));
 		if (!c->optimum_nodes || !c->match_cache) {
-			FREE(c->optimum_nodes);
-			FREE(c->match_cache);
+			free(c->optimum_nodes);
+			free(c->match_cache);
 			goto oom1;
 		}
 		c->cache_overflow_mark =
@@ -1129,7 +1129,7 @@ xpress_create_compressor(size_t max_bufsize, unsigned compression_level,
 	return 0;
 
 oom1:
-	ALIGNED_FREE(c);
+	aligned_free(c);
 oom0:
 	return WIMLIB_ERR_NOMEM;
 }
@@ -1159,12 +1159,12 @@ xpress_free_compressor(void *_c)
 
 #if SUPPORT_NEAR_OPTIMAL_PARSING
 	if (c->impl == xpress_compress_near_optimal) {
-		FREE(c->optimum_nodes);
-		FREE(c->match_cache);
+		free(c->optimum_nodes);
+		free(c->match_cache);
 	} else
 #endif
-		FREE(c->chosen_items);
-	ALIGNED_FREE(c);
+		free(c->chosen_items);
+	aligned_free(c);
 }
 
 const struct compressor_ops xpress_compressor_ops = {

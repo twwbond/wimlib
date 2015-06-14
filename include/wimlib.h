@@ -180,7 +180,6 @@
  *
  * - wimlib_global_init()
  * - wimlib_global_cleanup()
- * - wimlib_set_memory_allocator()
  * - wimlib_set_print_errors()
  * - wimlib_set_error_file()
  * - wimlib_set_error_file_by_name()
@@ -3938,39 +3937,6 @@ wimlib_set_image_flags(WIMStruct *wim, int image, const wimlib_tchar *flags);
  */
 extern int
 wimlib_set_image_name(WIMStruct *wim, int image, const wimlib_tchar *name);
-
-/**
- * @ingroup G_general
- *
- * Set the functions that wimlib uses to allocate and free memory.
- *
- * These settings are global and not per-WIM.
- *
- * The default is to use the default @c malloc(), @c free(), and @c realloc()
- * from the standard C library.
- *
- * Note: some external functions, such as those in @c libntfs-3g, may use the
- * standard memory allocation functions regardless of this setting.
- *
- * @param malloc_func
- * 	A function equivalent to @c malloc() that wimlib will use to allocate
- * 	memory.  If @c NULL, the allocator function is set back to the default
- * 	@c malloc() from the C library.
- * @param free_func
- * 	A function equivalent to @c free() that wimlib will use to free memory.
- * 	If @c NULL, the free function is set back to the default @c free() from
- * 	the C library.
- * @param realloc_func
- * 	A function equivalent to @c realloc() that wimlib will use to reallocate
- * 	memory.  If @c NULL, the free function is set back to the default @c
- * 	realloc() from the C library.
- *
- * @return 0
- */
-extern int
-wimlib_set_memory_allocator(void *(*malloc_func)(size_t),
-			    void (*free_func)(void *),
-			    void *(*realloc_func)(void *, size_t));
 
 /**
  * @ingroup G_writing_and_overwriting_wims

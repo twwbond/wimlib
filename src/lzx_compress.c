@@ -2037,7 +2037,7 @@ lzx_create_compressor(size_t max_bufsize, unsigned compression_level,
 	if (window_order == 0)
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	c = ALIGNED_MALLOC(lzx_get_compressor_size(max_bufsize,
+	c = aligned_malloc(lzx_get_compressor_size(max_bufsize,
 						   compression_level),
 			   MATCHFINDER_ALIGNMENT);
 	if (!c)
@@ -2049,7 +2049,7 @@ lzx_create_compressor(size_t max_bufsize, unsigned compression_level,
 	c->window_order = window_order;
 
 	if (!c->destructive) {
-		c->in_buffer = MALLOC(max_bufsize);
+		c->in_buffer = malloc(max_bufsize);
 		if (!c->in_buffer)
 			goto oom1;
 	}
@@ -2114,7 +2114,7 @@ lzx_create_compressor(size_t max_bufsize, unsigned compression_level,
 	return 0;
 
 oom1:
-	ALIGNED_FREE(c);
+	aligned_free(c);
 oom0:
 	return WIMLIB_ERR_NOMEM;
 }
@@ -2162,8 +2162,8 @@ lzx_free_compressor(void *_c)
 	struct lzx_compressor *c = _c;
 
 	if (!c->destructive)
-		FREE(c->in_buffer);
-	ALIGNED_FREE(c);
+		free(c->in_buffer);
+	aligned_free(c);
 }
 
 const struct compressor_ops lzx_compressor_ops = {

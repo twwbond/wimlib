@@ -621,7 +621,7 @@ lzx_free_decompressor(void *_dec)
 {
 	struct lzx_decompressor *dec = _dec;
 
-	ALIGNED_FREE(dec);
+	aligned_free(dec);
 }
 
 static int
@@ -636,7 +636,7 @@ lzx_create_decompressor(size_t max_block_size, void **dec_ret)
 
 	/* The aligned allocation is needed to ensure that the lzx_tables are
 	 * aligned properly.  */
-	dec = ALIGNED_MALLOC(sizeof(struct lzx_decompressor),
+	dec = aligned_malloc(sizeof(struct lzx_decompressor),
 			     DECODE_TABLE_ALIGNMENT);
 	if (!dec)
 		return WIMLIB_ERR_NOMEM;

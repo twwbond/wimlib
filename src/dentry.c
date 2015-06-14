@@ -231,12 +231,12 @@ static void
 do_dentry_set_name(struct wim_dentry *dentry, utf16lechar *name,
 		   size_t name_nbytes)
 {
-	FREE(dentry->d_name);
+	free(dentry->d_name);
 	dentry->d_name = name;
 	dentry->d_name_nbytes = name_nbytes;
 
 	if (dentry_has_short_name(dentry)) {
-		FREE(dentry->d_short_name);
+		free(dentry->d_short_name);
 		dentry->d_short_name = NULL;
 		dentry->d_short_name_nbytes = 0;
 	}
@@ -909,14 +909,14 @@ new_dentry(const tchar *name, struct wim_dentry **dentry_ret)
 	struct wim_dentry *dentry;
 	int ret;
 
-	dentry = ZALLOC(sizeof(struct wim_dentry));
+	dentry = zalloc(sizeof(struct wim_dentry));
 	if (!dentry)
 		return WIMLIB_ERR_NOMEM;
 
 	if (name && *name) {
 		ret = dentry_set_name(dentry, name);
 		if (ret) {
-			FREE(dentry);
+			free(dentry);
 			return ret;
 		}
 	}
@@ -993,10 +993,10 @@ free_dentry(struct wim_dentry *dentry)
 {
 	if (dentry) {
 		d_disassociate(dentry);
-		FREE(dentry->d_name);
-		FREE(dentry->d_short_name);
-		FREE(dentry->d_full_path);
-		FREE(dentry);
+		free(dentry->d_name);
+		free(dentry->d_short_name);
+		free(dentry->d_full_path);
+		free(dentry);
 	}
 }
 
@@ -1276,7 +1276,7 @@ setup_inode_streams(const u8 *p, const u8 *end, struct wim_inode *inode,
 	inode->i_num_streams = 1 + num_extra_streams;
 
 	if (unlikely(inode->i_num_streams > ARRAY_LEN(inode->i_embedded_streams))) {
-		inode->i_streams = CALLOC(inode->i_num_streams,
+		inode->i_streams = calloc(inode->i_num_streams,
 					  sizeof(inode->i_streams[0]));
 		if (!inode->i_streams)
 			return WIMLIB_ERR_NOMEM;

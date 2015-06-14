@@ -279,12 +279,12 @@ retry:
 
 	if (raw_fd < 0) {
 		if (errno == EEXIST) {
-			FREE(name);
+			free(name);
 			goto retry;
 		}
 		ERROR_WITH_ERRNO("Failed to create temporary file "
 				 "\"%"TS"\"", name);
-		FREE(name);
+		free(name);
 		return WIMLIB_ERR_OPEN;
 	}
 
@@ -399,7 +399,7 @@ end_extract_blob_wrapper(struct blob_descriptor *blob, int status, void *_ctx)
 						      ctx->saved_cbs);
 		filedes_invalidate(&ctx->tmpfile_fd);
 		tunlink(ctx->tmpfile_name);
-		FREE(ctx->tmpfile_name);
+		free(ctx->tmpfile_name);
 		return status;
 	}
 
@@ -625,7 +625,7 @@ destroy_dentry_list(struct list_head *dentry_list)
 		inode->i_visited = 0;
 		inode->i_can_externally_back = 0;
 		if ((void *)dentry->d_extraction_name != (void *)dentry->d_name)
-			FREE(dentry->d_extraction_name);
+			free(dentry->d_extraction_name);
 		dentry->d_extraction_name = NULL;
 		dentry->d_extraction_name_nchars = 0;
 	}
@@ -638,7 +638,7 @@ destroy_blob_list(struct list_head *blob_list)
 
 	list_for_each_entry(blob, blob_list, extraction_list)
 		if (blob->out_refcnt > ARRAY_LEN(blob->inline_blob_extraction_targets))
-			FREE(blob->blob_extraction_targets);
+			free(blob->blob_extraction_targets);
 }
 
 #ifdef __WIN32__
@@ -776,7 +776,7 @@ out_replace:
 
 		utf16le_put_tstr(tchar_name);
 
-		dentry->d_extraction_name = TSTRDUP(fixed_name);
+		dentry->d_extraction_name = tstrdup(fixed_name);
 		if (!dentry->d_extraction_name)
 			return WIMLIB_ERR_NOMEM;
 		dentry->d_extraction_name_nchars = fixed_name_num_chars;
@@ -929,7 +929,7 @@ ref_stream(struct wim_inode_stream *strm, struct wim_dentry *dentry,
 
 		if (blob->out_refcnt == alloc_blob_extraction_targets) {
 			alloc_blob_extraction_targets *= 2;
-			targets = REALLOC(prev_targets,
+			targets = realloc(prev_targets,
 					  alloc_blob_extraction_targets *
 					  sizeof(targets[0]));
 			if (!targets)
@@ -1309,7 +1309,7 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 		goto out;
 	}
 
-	ctx = ZALLOC(ops->context_size);
+	ctx = zalloc(ops->context_size);
 	if (!ctx) {
 		ret = WIMLIB_ERR_NOMEM;
 		goto out;
@@ -1417,7 +1417,7 @@ extract_trees(WIMStruct *wim, struct wim_dentry **trees, size_t num_trees,
 out_cleanup:
 	destroy_blob_list(&ctx->blob_list);
 	destroy_dentry_list(&dentry_list);
-	FREE(ctx);
+	free(ctx);
 out:
 	return ret;
 }
@@ -1512,7 +1512,7 @@ append_dentry_cb(struct wim_dentry *dentry, void *_ctx)
 
 		new_length = max(ctx->num_alloc_dentries + 8,
 				 ctx->num_alloc_dentries * 3 / 2);
-		new_dentries = REALLOC(ctx->dentries,
+		new_dentries = realloc(ctx->dentries,
 				       new_length * sizeof(ctx->dentries[0]));
 		if (new_dentries == NULL)
 			return WIMLIB_ERR_NOMEM;
@@ -1537,7 +1537,7 @@ append_matched_dentries(WIMStruct *wim, const tchar *orig_pattern,
 		return WIMLIB_ERR_NOMEM;
 	ret = expand_path_pattern(wim_get_current_root_dentry(wim), pattern,
 				  append_dentry_cb, ctx);
-	FREE(pattern);
+	free(pattern);
 	if (ret || ctx->num_dentries > count_before)
 		return ret;
 	if (extract_flags & WIMLIB_EXTRACT_FLAG_STRICT_GLOB) {
@@ -1602,7 +1602,7 @@ do_wimlib_extract_paths(WIMStruct *wim, int image, const tchar *target,
 		trees = append_dentry_ctx.dentries;
 		num_trees = append_dentry_ctx.num_dentries;
 	} else {
-		trees = MALLOC(num_paths * sizeof(trees[0]));
+		trees = malloc(num_paths * sizeof(trees[0]));
 		if (trees == NULL)
 			return WIMLIB_ERR_NOMEM;
 
@@ -1616,7 +1616,7 @@ do_wimlib_extract_paths(WIMStruct *wim, int image, const tchar *target,
 
 			trees[i] = get_dentry(wim, path,
 					      WIMLIB_CASE_PLATFORM_DEFAULT);
-			FREE(path);
+			free(path);
 			if (trees[i] == NULL) {
 				  ERROR("Path \"%"TS"\" does not exist "
 					"in WIM image %d",
@@ -1635,7 +1635,7 @@ do_wimlib_extract_paths(WIMStruct *wim, int image, const tchar *target,
 
 	ret = extract_trees(wim, trees, num_trees, target, extract_flags);
 out_free_trees:
-	FREE(trees);
+	free(trees);
 	return ret;
 }
 
@@ -1757,8 +1757,8 @@ wimlib_extract_pathlist(WIMStruct *wim, int image, const tchar *target,
 	ret = wimlib_extract_paths(wim, image, target,
 				   (const tchar * const *)paths, num_paths,
 				   extract_flags);
-	FREE(paths);
-	FREE(mem);
+	free(paths);
+	free(mem);
 	return ret;
 }
 
@@ -1890,7 +1890,7 @@ wimlib_extract_image_from_pipe_with_progress(int pipe_fd,
 		}
 
 		ret = WIMLIB_ERR_NOMEM;
-		metadata_rdesc = MALLOC(sizeof(struct wim_resource_descriptor));
+		metadata_rdesc = malloc(sizeof(struct wim_resource_descriptor));
 		if (!metadata_rdesc)
 			goto out_wimlib_free;
 		wim_reshdr_to_desc_and_blob(&reshdr, pwm, metadata_rdesc,

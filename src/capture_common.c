@@ -223,9 +223,9 @@ read_capture_config(const tchar *config_file, const void *buf,
 		return ret;
 	}
 
-	FREE(prepopulate_pats.strings);
-	FREE(compression_exclusion_pats.strings);
-	FREE(compression_folder_pats.strings);
+	free(prepopulate_pats.strings);
+	free(compression_exclusion_pats.strings);
+	free(compression_folder_pats.strings);
 
 	config->buf = mem;
 	return 0;
@@ -234,9 +234,9 @@ read_capture_config(const tchar *config_file, const void *buf,
 void
 destroy_capture_config(struct capture_config *config)
 {
-	FREE(config->exclusion_pats.strings);
-	FREE(config->exclusion_exception_pats.strings);
-	FREE(config->buf);
+	free(config->exclusion_pats.strings);
+	free(config->exclusion_exception_pats.strings);
+	free(config->buf);
 }
 
 /*

@@ -51,9 +51,9 @@ serial_chunk_compressor_destroy(struct chunk_compressor *_ctx)
 		return;
 
 	wimlib_free_compressor(ctx->compressor);
-	FREE(ctx->udata);
-	FREE(ctx->cdata);
-	FREE(ctx);
+	free(ctx->udata);
+	free(ctx->cdata);
+	free(ctx);
 }
 
 static void *
@@ -114,7 +114,7 @@ new_serial_chunk_compressor(int out_ctype, u32 out_chunk_size,
 
 	wimlib_assert(out_chunk_size > 0);
 
-	ctx = ZALLOC(sizeof(*ctx));
+	ctx = zalloc(sizeof(*ctx));
 	if (ctx == NULL)
 		return WIMLIB_ERR_NOMEM;
 
@@ -132,8 +132,8 @@ new_serial_chunk_compressor(int out_ctype, u32 out_chunk_size,
 	if (ret)
 		goto err;
 
-	ctx->udata = MALLOC(out_chunk_size);
-	ctx->cdata = MALLOC(out_chunk_size - 1);
+	ctx->udata = malloc(out_chunk_size);
+	ctx->cdata = malloc(out_chunk_size - 1);
 	if (ctx->udata == NULL || ctx->cdata == NULL) {
 		ret = WIMLIB_ERR_NOMEM;
 		goto err;

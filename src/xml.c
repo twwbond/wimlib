@@ -315,29 +315,29 @@ sort_by_index(const void *p1, const void *p2)
 static void
 destroy_windows_info(struct windows_info *windows_info)
 {
-	FREE(windows_info->product_name);
-	FREE(windows_info->edition_id);
-	FREE(windows_info->installation_type);
-	FREE(windows_info->hal);
-	FREE(windows_info->product_type);
-	FREE(windows_info->product_suite);
-	FREE(windows_info->pkeyconfigversion);
+	free(windows_info->product_name);
+	free(windows_info->edition_id);
+	free(windows_info->installation_type);
+	free(windows_info->hal);
+	free(windows_info->product_type);
+	free(windows_info->product_suite);
+	free(windows_info->pkeyconfigversion);
 	for (size_t i = 0; i < windows_info->num_languages; i++)
-		FREE(windows_info->languages[i]);
-	FREE(windows_info->languages);
-	FREE(windows_info->default_language);
-	FREE(windows_info->system_root);
+		free(windows_info->languages[i]);
+	free(windows_info->languages);
+	free(windows_info->default_language);
+	free(windows_info->system_root);
 }
 
 /* Frees memory allocated inside a struct image_info structure. */
 static void
 destroy_image_info(struct image_info *image_info)
 {
-	FREE(image_info->name);
-	FREE(image_info->description);
-	FREE(image_info->flags);
-	FREE(image_info->display_name);
-	FREE(image_info->display_description);
+	free(image_info->name);
+	free(image_info->description);
+	free(image_info->flags);
+	free(image_info->display_name);
+	free(image_info->display_description);
 	destroy_windows_info(&image_info->windows_info);
 	memset(image_info, 0, sizeof(struct image_info));
 }
@@ -349,9 +349,9 @@ free_wim_info(struct wim_info *info)
 		if (info->images) {
 			for (int i = 0; i < info->num_images; i++)
 				destroy_image_info(&info->images[i]);
-			FREE(info->images);
+			free(info->images);
 		}
-		FREE(info);
+		free(info);
 	}
 }
 
@@ -395,7 +395,7 @@ xml_read_languages(const xmlNode *languages_node,
 		if (node_is_element(child) && node_name_is(child, "LANGUAGE"))
 			num_languages++;
 
-	languages = CALLOC(num_languages, sizeof(languages[0]));
+	languages = calloc(num_languages, sizeof(languages[0]));
 	if (!languages)
 		return WIMLIB_ERR_NOMEM;
 
@@ -532,7 +532,7 @@ xml_read_image_info(xmlNode *image_node, struct image_info *image_info)
 	}
 	if (!image_info->name) {
 		tchar *empty_name;
-		empty_name = MALLOC(sizeof(tchar));
+		empty_name = malloc(sizeof(tchar));
 		if (!empty_name)
 			return WIMLIB_ERR_NOMEM;
 		*empty_name = T('\0');
@@ -552,7 +552,7 @@ xml_read_wim_info(const xmlNode *wim_node, struct wim_info **wim_info_ret)
 	int num_images;
 	int i;
 
-	wim_info = ZALLOC(sizeof(struct wim_info));
+	wim_info = zalloc(sizeof(struct wim_info));
 	if (!wim_info)
 		return WIMLIB_ERR_NOMEM;
 
@@ -570,7 +570,7 @@ xml_read_wim_info(const xmlNode *wim_node, struct wim_info **wim_info_ret)
 
 	if (num_images > 0) {
 		/* Allocate the array of struct image_infos and fill them in. */
-		wim_info->images = CALLOC(num_images, sizeof(wim_info->images[0]));
+		wim_info->images = calloc(num_images, sizeof(wim_info->images[0]));
 		if (!wim_info->images) {
 			ret = WIMLIB_ERR_NOMEM;
 			goto err;
@@ -704,7 +704,7 @@ xml_write_string(xmlTextWriter *writer, const char *name,
 		if (rc)
 			return rc;
 		rc = xmlTextWriterWriteElement(writer, name, utf8_str);
-		FREE(utf8_str);
+		free(utf8_str);
 		if (rc < 0)
 			return rc;
 	}
@@ -738,7 +738,7 @@ dup_strings_from_specs(const void *old_struct_with_strings,
 					((const void*)old_struct_with_strings + specs[i].offset);
 		tchar **new_str_p = (tchar **)((void*)new_struct_with_strings + specs[i].offset);
 		if (old_str) {
-			*new_str_p = TSTRDUP(old_str);
+			*new_str_p = tstrdup(old_str);
 			if (!*new_str_p)
 				return WIMLIB_ERR_NOMEM;
 		}
@@ -970,12 +970,12 @@ add_image_info_struct(struct wim_info *wim_info)
 {
 	struct image_info *images;
 
-	images = CALLOC(wim_info->num_images + 1, sizeof(struct image_info));
+	images = calloc(wim_info->num_images + 1, sizeof(struct image_info));
 	if (!images)
 		return NULL;
 	memcpy(images, wim_info->images,
 	       wim_info->num_images * sizeof(struct image_info));
-	FREE(wim_info->images);
+	free(wim_info->images);
 	wim_info->images = images;
 	wim_info->num_images++;
 	return &images[wim_info->num_images - 1];
@@ -994,28 +994,28 @@ clone_windows_info(const struct windows_info *old, struct windows_info *new)
 		return ret;
 
 	if (old->pkeyconfigversion) {
-		new->pkeyconfigversion = TSTRDUP(old->pkeyconfigversion);
+		new->pkeyconfigversion = tstrdup(old->pkeyconfigversion);
 		if (new->pkeyconfigversion == NULL)
 			return WIMLIB_ERR_NOMEM;
 	}
 
 	if (old->languages) {
-		new->languages = CALLOC(old->num_languages, sizeof(new->languages[0]));
+		new->languages = calloc(old->num_languages, sizeof(new->languages[0]));
 		if (!new->languages)
 			return WIMLIB_ERR_NOMEM;
 		new->num_languages = old->num_languages;
 		for (size_t i = 0; i < new->num_languages; i++) {
 			if (!old->languages[i])
 				continue;
-			new->languages[i] = TSTRDUP(old->languages[i]);
+			new->languages[i] = tstrdup(old->languages[i]);
 			if (!new->languages[i])
 				return WIMLIB_ERR_NOMEM;
 		}
 	}
 	if (old->default_language &&
-			!(new->default_language = TSTRDUP(old->default_language)))
+			!(new->default_language = tstrdup(old->default_language)))
 		return WIMLIB_ERR_NOMEM;
-	if (old->system_root && !(new->system_root = TSTRDUP(old->system_root)))
+	if (old->system_root && !(new->system_root = tstrdup(old->system_root)))
 		return WIMLIB_ERR_NOMEM;
 	if (old->windows_version_exists) {
 		new->windows_version_exists = true;
@@ -1080,7 +1080,7 @@ xml_export_image(const struct wim_info *old_wim_info,
 	if (*new_wim_info_p) {
 		new_wim_info = *new_wim_info_p;
 	} else {
-		new_wim_info = ZALLOC(sizeof(struct wim_info));
+		new_wim_info = zalloc(sizeof(struct wim_info));
 		if (!new_wim_info)
 			goto err;
 	}
@@ -1096,14 +1096,14 @@ xml_export_image(const struct wim_info *old_wim_info,
 	image_info->index = new_wim_info->num_images;
 
 	if (dest_image_name) {
-		FREE(image_info->name);
-		image_info->name = TSTRDUP(dest_image_name);
+		free(image_info->name);
+		image_info->name = tstrdup(dest_image_name);
 		if (!image_info->name)
 			goto err_destroy_image_info;
 	}
 	if (dest_image_description) {
-		FREE(image_info->description);
-		image_info->description = TSTRDUP(dest_image_description);
+		free(image_info->description);
+		image_info->description = tstrdup(dest_image_description);
 		if (!image_info->description)
 			goto err_destroy_image_info;
 	}
@@ -1148,14 +1148,6 @@ xml_get_max_image_name_len(const WIMStruct *wim)
 	for (u32 i = 0; i < wim->hdr.image_count; i++)
 		max_len = max(max_len, tstrlen(wim->wim_info->images[i].name));
 	return max_len;
-}
-
-void
-xml_set_memory_allocator(void *(*malloc_func)(size_t),
-			 void (*free_func)(void *),
-			 void *(*realloc_func)(void *, size_t))
-{
-	xmlMemSetup(free_func, malloc_func, realloc_func, STRDUP);
 }
 
 static u64
@@ -1224,7 +1216,7 @@ xml_add_image(WIMStruct *wim, const tchar *name)
 	if (wim->wim_info) {
 		wim_info = wim->wim_info;
 	} else {
-		wim_info = ZALLOC(sizeof(struct wim_info));
+		wim_info = zalloc(sizeof(struct wim_info));
 		if (!wim_info)
 			return WIMLIB_ERR_NOMEM;
 	}
@@ -1233,7 +1225,7 @@ xml_add_image(WIMStruct *wim, const tchar *name)
 	if (!image_info)
 		goto out_free_wim_info;
 
-	if (!(image_info->name = TSTRDUP(name)))
+	if (!(image_info->name = tstrdup(name)))
 		goto out_destroy_image_info;
 
 	wim->wim_info = wim_info;
@@ -1247,7 +1239,7 @@ out_destroy_image_info:
 	wim_info->num_images--;
 out_free_wim_info:
 	if (wim_info != wim->wim_info)
-		FREE(wim_info);
+		free(wim_info);
 	return WIMLIB_ERR_NOMEM;
 }
 
@@ -1353,7 +1345,7 @@ read_wim_xml_data(WIMStruct *wim)
 out_free_doc:
 	xmlFreeDoc(doc);
 out_free_xml_data:
-	FREE(xml_data);
+	free(xml_data);
 out:
 	return ret;
 }
@@ -1475,7 +1467,7 @@ prepare_wim_xml_data(WIMStruct *wim, int image, u64 total_bytes,
 	 * the data.  */
 
 	xml_len = len + 2;
-	xml_data = MALLOC(xml_len);
+	xml_data = malloc(xml_len);
 	if (!xml_data) {
 		ret = WIMLIB_ERR_NOMEM;
 		goto out_free_text_writer;
@@ -1531,7 +1523,7 @@ write_wim_xml_data(WIMStruct *wim, int image, u64 total_bytes,
 					     out_reshdr,
 					     NULL,
 					     write_resource_flags);
-	FREE(xml_data);
+	free(xml_data);
 	return ret;
 }
 
@@ -1599,7 +1591,7 @@ wimlib_extract_xml_data(WIMStruct *wim, FILE *fp)
 		ERROR_WITH_ERRNO("Failed to extract XML data");
 		ret = WIMLIB_ERR_WRITE;
 	}
-	FREE(buf);
+	free(buf);
 	return ret;
 }
 
@@ -1625,11 +1617,11 @@ wimlib_set_image_name(WIMStruct *wim, int image, const tchar *name)
 		}
 	}
 
-	p = TSTRDUP(name);
+	p = tstrdup(name);
 	if (!p)
 		return WIMLIB_ERR_NOMEM;
 
-	FREE(wim->wim_info->images[image - 1].name);
+	free(wim->wim_info->images[image - 1].name);
 	wim->wim_info->images[image - 1].name = p;
 	return 0;
 }
@@ -1646,7 +1638,7 @@ do_set_image_info_str(WIMStruct *wim, int image, const tchar *tstr,
 		return WIMLIB_ERR_INVALID_IMAGE;
 	}
 	if (tstr) {
-		tstr_copy = TSTRDUP(tstr);
+		tstr_copy = tstrdup(tstr);
 		if (!tstr_copy)
 			return WIMLIB_ERR_NOMEM;
 	} else {
@@ -1654,7 +1646,7 @@ do_set_image_info_str(WIMStruct *wim, int image, const tchar *tstr,
 	}
 	dest_tstr_p = (tchar**)((void*)&wim->wim_info->images[image - 1] + offset);
 
-	FREE(*dest_tstr_p);
+	free(*dest_tstr_p);
 	*dest_tstr_p = tstr_copy;
 	return 0;
 }

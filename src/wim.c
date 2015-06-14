@@ -142,7 +142,7 @@ wim_has_solid_resources(const WIMStruct *wim)
 static WIMStruct *
 new_wim_struct(void)
 {
-	WIMStruct *wim = ZALLOC(sizeof(WIMStruct));
+	WIMStruct *wim = zalloc(sizeof(WIMStruct));
 	if (!wim)
 		return NULL;
 
@@ -232,7 +232,7 @@ put_image_metadata(struct wim_image_metadata *imd, struct blob_table *table)
 {
 	if (imd && --imd->refcnt == 0) {
 		destroy_image_metadata(imd, table, true);
-		FREE(imd);
+		free(imd);
 	}
 }
 
@@ -243,7 +243,7 @@ append_image_metadata(WIMStruct *wim, struct wim_image_metadata *imd)
 {
 	struct wim_image_metadata **imd_array;
 
-	imd_array = REALLOC(wim->image_metadata,
+	imd_array = realloc(wim->image_metadata,
 			    sizeof(wim->image_metadata[0]) * (wim->hdr.image_count + 1));
 
 	if (!imd_array)
@@ -258,7 +258,7 @@ new_image_metadata(void)
 {
 	struct wim_image_metadata *imd;
 
-	imd = ZALLOC(sizeof(*imd));
+	imd = zalloc(sizeof(*imd));
 	if (imd) {
 		imd->refcnt = 1;
 		INIT_HLIST_HEAD(&imd->inode_list);
@@ -272,7 +272,7 @@ new_image_metadata_array(unsigned num_images)
 {
 	struct wim_image_metadata **imd_array;
 
-	imd_array = CALLOC(num_images, sizeof(imd_array[0]));
+	imd_array = calloc(num_images, sizeof(imd_array[0]));
 
 	if (!imd_array)
 		return NULL;
@@ -281,7 +281,7 @@ new_image_metadata_array(unsigned num_images)
 		if (unlikely(!imd_array[i])) {
 			for (unsigned j = 0; j < i; j++)
 				put_image_metadata(imd_array[j], NULL);
-			FREE(imd_array);
+			free(imd_array);
 			return NULL;
 		}
 	}
@@ -889,14 +889,14 @@ wimlib_free(WIMStruct *wim)
 
 	wimlib_free_decompressor(wim->decompressor);
 
-	FREE(wim->filename);
+	free(wim->filename);
 	free_wim_info(wim->wim_info);
 	if (wim->image_metadata) {
 		for (unsigned i = 0; i < wim->hdr.image_count; i++)
 			put_image_metadata(wim->image_metadata[i], NULL);
-		FREE(wim->image_metadata);
+		free(wim->image_metadata);
 	}
-	FREE(wim);
+	free(wim);
 }
 
 static bool

@@ -167,7 +167,7 @@ wimlib_join_with_progress(const tchar * const *swm_names,
 		return WIMLIB_ERR_INVALID_PARAM;
 	num_additional_swms = num_swms - 1;
 
-	additional_swms = CALLOC((num_additional_swms + 1),
+	additional_swms = calloc((num_additional_swms + 1),
 				 sizeof(additional_swms[0]));
 	if (!additional_swms)
 		return WIMLIB_ERR_NOMEM;
@@ -215,7 +215,7 @@ wimlib_join_with_progress(const tchar * const *swm_names,
 out_free_swms:
 	for (i = 0; i < num_additional_swms + 1; i++)
 		wimlib_free(additional_swms[i]);
-	FREE(additional_swms);
+	free(additional_swms);
 	wimlib_free(swm0);
 	return ret;
 }

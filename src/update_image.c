@@ -158,7 +158,7 @@ new_update_command_journal(size_t num_cmds, struct wim_dentry **root_p,
 {
 	struct update_command_journal *j;
 
-	j = MALLOC(sizeof(*j) + num_cmds * sizeof(j->cmd_prims[0]));
+	j = malloc(sizeof(*j) + num_cmds * sizeof(j->cmd_prims[0]));
 	if (j) {
 		j->num_cmds = num_cmds;
 		j->cur_cmd = 0;
@@ -188,8 +188,8 @@ free_update_command_journal(struct update_command_journal *j)
 
 	for (size_t i = 0; i < j->num_cmds; i++)
 		if (j->cmd_prims[i].entries != j->cmd_prims[i].inline_entries)
-			FREE(j->cmd_prims[i].entries);
-	FREE(j);
+			free(j->cmd_prims[i].entries);
+	free(j);
 }
 
 /* Add the entry @prim to the update command journal @j.  */
@@ -209,13 +209,13 @@ record_update_primitive(struct update_command_journal *j,
 		new_num_alloc_entries = l->num_alloc_entries * 2;
 		new_size = new_num_alloc_entries * sizeof(new_entries[0]);
 		if (l->entries == l->inline_entries) {
-			new_entries = MALLOC(new_size);
+			new_entries = malloc(new_size);
 			if (!new_entries)
 				return WIMLIB_ERR_NOMEM;
 			memcpy(new_entries, l->inline_entries,
 			       sizeof(l->inline_entries));
 		} else {
-			new_entries = REALLOC(l->entries, new_size);
+			new_entries = realloc(l->entries, new_size);
 			if (!new_entries)
 				return WIMLIB_ERR_NOMEM;
 		}
@@ -289,7 +289,7 @@ rollback_name_change(utf16lechar *old_name,
 		     utf16lechar **name_ptr, u16 *name_nbytes_ptr)
 {
 	/* Free the new name, then replace it with the old name.  */
-	FREE(*name_ptr);
+	free(*name_ptr);
 	if (old_name) {
 		*name_ptr = old_name;
 		*name_nbytes_ptr = utf16le_len_bytes(old_name);
@@ -423,7 +423,7 @@ journaled_change_name(struct update_command_journal *j,
 	prim.name.old_name = dentry->d_name;
 	ret = record_update_primitive(j, prim);
 	if (ret) {
-		FREE(new_name);
+		free(new_name);
 		return ret;
 	}
 
@@ -459,7 +459,7 @@ commit_update(struct update_command_journal *j)
 			if (j->cmd_prims[i].entries[k].type == CHANGE_FILE_NAME ||
 			    j->cmd_prims[i].entries[k].type == CHANGE_SHORT_NAME)
 			{
-				FREE(j->cmd_prims[i].entries[k].name.old_name);
+				free(j->cmd_prims[i].entries[k].name.old_name);
 			}
 		}
 	}
@@ -739,7 +739,7 @@ get_capture_config(const tchar *config_file, struct capture_config *config,
 
 		size_t len = tstrlen(fs_source_path) +
 			     tstrlen(wimboot_cfgfile);
-		tmp_config_file = MALLOC((len + 1) * sizeof(tchar));
+		tmp_config_file = malloc((len + 1) * sizeof(tchar));
 		struct stat st;
 
 		tsprintf(tmp_config_file, T("%"TS"%"TS),
@@ -769,7 +769,7 @@ get_capture_config(const tchar *config_file, struct capture_config *config,
 		 * etc.  */
 		ret = 0;
 	}
-	FREE(tmp_config_file);
+	free(tmp_config_file);
 	return ret;
 }
 
@@ -914,7 +914,7 @@ execute_delete_command(struct update_command_journal *j,
 static int
 free_dentry_full_path(struct wim_dentry *dentry, void *_ignore)
 {
-	FREE(dentry->d_full_path);
+	free(dentry->d_full_path);
 	dentry->d_full_path = NULL;
 	return 0;
 }
@@ -1315,18 +1315,18 @@ free_update_commands(struct wimlib_update_command *cmds, size_t num_cmds)
 		for (size_t i = 0; i < num_cmds; i++) {
 			switch (cmds[i].op) {
 			case WIMLIB_UPDATE_OP_ADD:
-				FREE(cmds[i].add.wim_target_path);
+				free(cmds[i].add.wim_target_path);
 				break;
 			case WIMLIB_UPDATE_OP_DELETE:
-				FREE(cmds[i].delete_.wim_path);
+				free(cmds[i].delete_.wim_path);
 				break;
 			case WIMLIB_UPDATE_OP_RENAME:
-				FREE(cmds[i].rename.wim_source_path);
-				FREE(cmds[i].rename.wim_target_path);
+				free(cmds[i].rename.wim_source_path);
+				free(cmds[i].rename.wim_target_path);
 				break;
 			}
 		}
-		FREE(cmds);
+		free(cmds);
 	}
 }
 
@@ -1338,7 +1338,7 @@ copy_update_commands(const struct wimlib_update_command *cmds,
 	int ret;
 	struct wimlib_update_command *cmds_copy;
 
-	cmds_copy = CALLOC(num_cmds, sizeof(cmds[0]));
+	cmds_copy = calloc(num_cmds, sizeof(cmds[0]));
 	if (!cmds_copy)
 		goto oom;
 

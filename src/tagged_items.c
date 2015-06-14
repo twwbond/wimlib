@@ -116,13 +116,13 @@ inode_add_tagged_item(struct wim_inode *inode, u32 tag, u32 len)
 	itemsize = sizeof(struct tagged_item_header) + ALIGN(len, 8);
 	newsize = itemsize + inode->i_extra_size;
 
-	buf = MALLOC(newsize);
+	buf = malloc(newsize);
 	if (!buf)
 		return NULL;
 
 	if (inode->i_extra_size) {
 		memcpy(buf + itemsize, inode->i_extra, inode->i_extra_size);
-		FREE(inode->i_extra);
+		free(inode->i_extra);
 	}
 	inode->i_extra = buf;
 	inode->i_extra_size = newsize;

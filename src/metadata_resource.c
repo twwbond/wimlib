@@ -115,7 +115,7 @@ read_metadata_resource(struct wim_image_metadata *imd)
 		goto out_free_security_data;
 
 	/* We have everything we need from the buffer now.  */
-	FREE(buf);
+	free(buf);
 	buf = NULL;
 
 	/* Calculate and validate inodes.  */
@@ -137,7 +137,7 @@ out_free_dentry_tree:
 out_free_security_data:
 	free_wim_security_data(sd);
 out_free_buf:
-	FREE(buf);
+	free(buf);
 	return ret;
 }
 
@@ -196,7 +196,7 @@ prepare_metadata_resource(WIMStruct *wim, int image,
 	/* Allocate a buffer to contain the uncompressed metadata resource.  */
 	buf = NULL;
 	if (likely(len == subdir_offset))
-		buf = MALLOC(len);
+		buf = malloc(len);
 	if (!buf) {
 		ERROR("Failed to allocate %"PRIu64" bytes for "
 		      "metadata resource", subdir_offset);
@@ -248,6 +248,6 @@ write_metadata_resource(WIMStruct *wim, int image, int write_resource_flags)
 	/* Original checksum was overridden; set a flag so it isn't used.  */
 	imd->metadata_blob->dont_check_metadata_hash = 1;
 
-	FREE(buf);
+	free(buf);
 	return ret;
 }

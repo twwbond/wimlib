@@ -171,14 +171,14 @@ add_blob_to_swm(struct blob_descriptor *blob, void *_swm_info)
 			size_t num_alloc_parts = swm_info->num_alloc_parts;
 
 			num_alloc_parts += 8;
-			parts = MALLOC(num_alloc_parts * sizeof(parts[0]));
+			parts = malloc(num_alloc_parts * sizeof(parts[0]));
 			if (!parts)
 				return WIMLIB_ERR_NOMEM;
 
 			for (unsigned i = 0; i < swm_info->num_parts; i++)
 				copy_part_info(&parts[i], &swm_info->parts[i]);
 
-			FREE(swm_info->parts);
+			free(swm_info->parts);
 			swm_info->parts = parts;
 			swm_info->num_alloc_parts = num_alloc_parts;
 		}
@@ -237,6 +237,6 @@ wimlib_split(WIMStruct *wim, const tchar *swm_name,
 
 	ret = write_split_wim(wim, swm_name, &swm_info, write_flags);
 out_free_swm_info:
-	FREE(swm_info.parts);
+	free(swm_info.parts);
 	return ret;
 }

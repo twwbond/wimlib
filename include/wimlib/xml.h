@@ -65,9 +65,4 @@ libxml_global_init(void);
 extern void
 libxml_global_cleanup(void);
 
-extern void
-xml_set_memory_allocator(void *(*malloc_func)(size_t),
-			 void (*free_func)(void *),
-			 void *(*realloc_func)(void *, size_t));
-
 #endif /* _WIMLIB_XML_H */

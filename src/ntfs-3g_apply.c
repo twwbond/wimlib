@@ -189,7 +189,7 @@ sd_fixup(const u8 *_desc, size_t *size_p)
 		return (u8*)_desc;
 	}
 
-	desc_new = MALLOC(size + sid_size(sid));
+	desc_new = malloc(size + sid_size(sid));
 	if (!desc_new)
 		return (u8*)_desc;
 
@@ -221,7 +221,7 @@ ntfs_3g_set_security_descriptor(ntfs_inode *ni, const void *desc, size_t desc_si
 		ret = WIMLIB_ERR_SET_SECURITY;
 
 	if (desc_fixed != desc)
-		FREE(desc_fixed);
+		free(desc_fixed);
 
 	return ret;
 }

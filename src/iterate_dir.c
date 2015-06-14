@@ -165,7 +165,7 @@ free_wimlib_dentry(struct wimlib_dir_entry *wdentry)
 	utf16le_put_tstr(wdentry->dos_name);
 	for (unsigned i = 1; i <= wdentry->num_named_streams; i++)
 		utf16le_put_tstr(wdentry->streams[i].stream_name);
-	FREE(wdentry);
+	free(wdentry);
 }
 
 static int
@@ -178,7 +178,7 @@ do_iterate_dir_tree(WIMStruct *wim,
 	int ret = WIMLIB_ERR_NOMEM;
 
 
-	wdentry = ZALLOC(sizeof(struct wimlib_dir_entry) +
+	wdentry = zalloc(sizeof(struct wimlib_dir_entry) +
 				(1 + dentry->d_inode->i_num_streams) *
 					sizeof(struct wimlib_stream_entry));
 	if (wdentry == NULL)
@@ -274,6 +274,6 @@ wimlib_iterate_dir_tree(WIMStruct *wim, int image, const tchar *_path,
 	};
 	wim->private = &ctx;
 	ret = for_image(wim, image, image_do_iterate_dir_tree);
-	FREE(path);
+	free(path);
 	return ret;
 }

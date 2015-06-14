@@ -112,7 +112,7 @@ unix_scan_regular_file(const char *path, u64 size, struct wim_inode *inode,
 		blob = new_blob_descriptor();
 		if (unlikely(!blob))
 			goto err_nomem;
-		blob->file_on_disk = STRDUP(path);
+		blob->file_on_disk = strdup(path);
 		if (unlikely(!blob->file_on_disk))
 			goto err_nomem;
 		blob->blob_location = BLOB_IN_FILE_ON_DISK;
@@ -492,7 +492,7 @@ unix_build_dentry_tree(struct wim_dentry **root_ret,
 	if (path_len >= path_bufsz)
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	path_buf = MALLOC(path_bufsz);
+	path_buf = malloc(path_bufsz);
 	if (!path_buf)
 		return WIMLIB_ERR_NOMEM;
 	memcpy(path_buf, root_disk_path, path_len + 1);
@@ -501,7 +501,7 @@ unix_build_dentry_tree(struct wim_dentry **root_ret,
 
 	ret = unix_build_dentry_tree_recursive(root_ret, path_buf, path_len,
 					       AT_FDCWD, path_buf, params);
-	FREE(path_buf);
+	free(path_buf);
 	return ret;
 }
 

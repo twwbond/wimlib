@@ -60,7 +60,7 @@ read_file_contents(const tchar *path, void **buf_ret, size_t *bufsize_ret)
 		return WIMLIB_ERR_STAT;
 	}
 	if ((size_t)st.st_size != st.st_size ||
-	    (buf = MALLOC(st.st_size)) == NULL)
+	    (buf = malloc(st.st_size)) == NULL)
 	{
 		close(raw_fd);
 		ERROR("Not enough memory to read \"%"TS"\"", path);
@@ -74,7 +74,7 @@ read_file_contents(const tchar *path, void **buf_ret, size_t *bufsize_ret)
 	errno = errno_save;
 	if (ret) {
 		ERROR_WITH_ERRNO("Error reading \"%"TS"\"", path);
-		FREE(buf);
+		free(buf);
 		return ret;
 	}
 
@@ -150,7 +150,7 @@ string_set_append(struct string_set *set, tchar *str)
 
 		num_alloc_strings = max(num_alloc_strings * 3 / 2,
 					num_alloc_strings + 4);
-		new_strings = REALLOC(set->strings,
+		new_strings = realloc(set->strings,
 				      sizeof(set->strings[0]) * num_alloc_strings);
 		if (!new_strings)
 			return WIMLIB_ERR_NOMEM;
@@ -329,7 +329,7 @@ do_load_text_file(const tchar *path,
 
 	ret = translate_text_buffer(buf, bufsize, &tstr, &tstr_nchars);
 	if (pathmode)
-		FREE((void *)buf);
+		free((void *)buf);
 	if (ret)
 		return ret;
 
@@ -339,8 +339,8 @@ do_load_text_file(const tchar *path,
 			      num_pos_sections, flags, mangle_line);
 	if (ret) {
 		for (int i = 0; i < num_pos_sections; i++)
-			FREE(pos_sections[i].strings->strings);
-		FREE(tstr);
+			free(pos_sections[i].strings->strings);
+		free(tstr);
 		return ret;
 	}
 

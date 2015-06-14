@@ -317,9 +317,9 @@ load_prepopulate_pats(struct win32_apply_ctx *ctx)
 	if (ret)
 		return ret;
 
-	s = ZALLOC(sizeof(struct string_set));
+	s = zalloc(sizeof(struct string_set));
 	if (!s) {
-		FREE(buf);
+		free(buf);
 		return WIMLIB_ERR_NOMEM;
 	}
 
@@ -331,9 +331,9 @@ load_prepopulate_pats(struct win32_apply_ctx *ctx)
 					LOAD_TEXT_FILE_NO_WARNINGS,
 				mangle_pat);
 	BUILD_BUG_ON(OS_PREFERRED_PATH_SEPARATOR != WIM_PATH_SEPARATOR);
-	FREE(buf);
+	free(buf);
 	if (ret) {
-		FREE(s);
+		free(s);
 		return ret;
 	}
 	ctx->wimboot.prepopulate_pats = s;
@@ -590,7 +590,7 @@ register_wim_with_wof(WIMStruct *wim, struct win32_apply_ctx *ctx)
 
 	/* Not yet registered  */
 
-	p = REALLOC(ctx->wimboot.wims,
+	p = realloc(ctx->wimboot.wims,
 		    (ctx->wimboot.num_wims + 1) * sizeof(ctx->wimboot.wims[0]));
 	if (!p)
 		return WIMLIB_ERR_NOMEM;
@@ -990,11 +990,11 @@ prepare_target(struct list_head *dentry_list, struct win32_apply_ctx *ctx)
 			8 + 1 + 3);
 
 	ctx->pathbuf.MaximumLength = path_max * sizeof(wchar_t);
-	ctx->pathbuf.Buffer = MALLOC(ctx->pathbuf.MaximumLength);
+	ctx->pathbuf.Buffer = malloc(ctx->pathbuf.MaximumLength);
 	if (!ctx->pathbuf.Buffer)
 		return WIMLIB_ERR_NOMEM;
 
-	ctx->print_buffer = MALLOC((ctx->common.target_nchars + 1 + path_max + 1) *
+	ctx->print_buffer = malloc((ctx->common.target_nchars + 1 + path_max + 1) *
 				   sizeof(wchar_t));
 	if (!ctx->print_buffer)
 		return WIMLIB_ERR_NOMEM;
@@ -1770,7 +1770,7 @@ prepare_data_buffer(struct win32_apply_ctx *ctx, u64 blob_size)
 		void *new_buffer;
 		if ((size_t)blob_size != blob_size)
 			return false;
-		new_buffer = REALLOC(ctx->data_buffer, blob_size);
+		new_buffer = realloc(ctx->data_buffer, blob_size);
 		if (!new_buffer)
 			return false;
 		ctx->data_buffer = new_buffer;
@@ -2311,7 +2311,7 @@ set_security_descriptor(HANDLE h, const void *_desc,
 	if (likely(desc_size <= STACK_MAX)) {
 		desc = alloca(desc_size);
 	} else {
-		desc = MALLOC(desc_size);
+		desc = malloc(desc_size);
 		if (!desc)
 			return STATUS_NO_MEMORY;
 	}
@@ -2401,7 +2401,7 @@ retry:
 
 out_maybe_free_desc:
 	if (unlikely(desc_size > STACK_MAX))
-		FREE(desc);
+		free(desc);
 	return status;
 }
 
@@ -2661,15 +2661,15 @@ out:
 	close_target_directory(ctx);
 	if (ctx->target_ntpath.Buffer)
 		HeapFree(GetProcessHeap(), 0, ctx->target_ntpath.Buffer);
-	FREE(ctx->pathbuf.Buffer);
-	FREE(ctx->print_buffer);
-	FREE(ctx->wimboot.wims);
+	free(ctx->pathbuf.Buffer);
+	free(ctx->print_buffer);
+	free(ctx->wimboot.wims);
 	if (ctx->wimboot.prepopulate_pats) {
-		FREE(ctx->wimboot.prepopulate_pats->strings);
-		FREE(ctx->wimboot.prepopulate_pats);
+		free(ctx->wimboot.prepopulate_pats->strings);
+		free(ctx->wimboot.prepopulate_pats);
 	}
-	FREE(ctx->wimboot.mem_prepopulate_pats);
-	FREE(ctx->data_buffer);
+	free(ctx->wimboot.mem_prepopulate_pats);
+	free(ctx->data_buffer);
 	return ret;
 }
 

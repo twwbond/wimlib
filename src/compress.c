@@ -138,7 +138,7 @@ wimlib_create_compressor(enum wimlib_compression_type ctype,
 	if (max_block_size == 0)
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	c = MALLOC(sizeof(*c));
+	c = malloc(sizeof(*c));
 	if (c == NULL)
 		return WIMLIB_ERR_NOMEM;
 	c->ops = compressor_ops[ctype];
@@ -158,7 +158,7 @@ wimlib_create_compressor(enum wimlib_compression_type ctype,
 						destructive,
 						&c->private);
 		if (ret) {
-			FREE(c);
+			free(c);
 			return ret;
 		}
 	}
@@ -185,6 +185,6 @@ wimlib_free_compressor(struct wimlib_compressor *c)
 	if (c) {
 		if (c->ops->free_compressor)
 			c->ops->free_compressor(c->private);
-		FREE(c);
+		free(c);
 	}
 }

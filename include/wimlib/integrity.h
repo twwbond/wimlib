@@ -15,7 +15,7 @@ extern int
 read_integrity_table(WIMStruct *wim, u64 num_checked_bytes,
 		     struct integrity_table **table_ret);
 
-#define free_integrity_table(table) FREE(table)
+#define free_integrity_table(table) free(table)
 
 extern int
 write_integrity_table(WIMStruct *wim,

@@ -50,7 +50,7 @@ new_inode(struct wim_dentry *dentry, bool set_timestamps)
 {
 	struct wim_inode *inode;
 
-	inode = ZALLOC(sizeof(struct wim_inode));
+	inode = zalloc(sizeof(struct wim_inode));
 	if (!inode)
 		return NULL;
 
@@ -73,7 +73,7 @@ static inline void
 destroy_stream(struct wim_inode_stream *strm)
 {
 	if (strm->stream_name != NO_STREAM_NAME)
-		FREE(strm->stream_name);
+		free(strm->stream_name);
 }
 
 static void
@@ -82,12 +82,12 @@ free_inode(struct wim_inode *inode)
 	for (unsigned i = 0; i < inode->i_num_streams; i++)
 		destroy_stream(&inode->i_streams[i]);
 	if (inode->i_streams != inode->i_embedded_streams)
-		FREE(inode->i_streams);
+		free(inode->i_streams);
 	if (inode->i_extra)
-		FREE(inode->i_extra);
+		free(inode->i_extra);
 	if (!hlist_unhashed(&inode->i_hlist_node))
 		hlist_del(&inode->i_hlist_node);
-	FREE(inode);
+	free(inode);
 }
 
 static inline void
@@ -140,7 +140,7 @@ inode_dec_num_opened_fds(struct wim_inode *inode)
 
 	if (--inode->i_num_opened_fds == 0) {
 		/* The last file descriptor to this inode was closed.  */
-		FREE(inode->i_fds);
+		free(inode->i_fds);
 		inode->i_fds = NULL;
 		inode->i_num_allocated_fds = 0;
 
@@ -279,7 +279,7 @@ inode_add_stream(struct wim_inode *inode, int stream_type,
 		if (inode->i_num_streams < ARRAY_LEN(inode->i_embedded_streams)) {
 			streams = inode->i_embedded_streams;
 		} else {
-			streams = MALLOC((inode->i_num_streams + 1) *
+			streams = malloc((inode->i_num_streams + 1) *
 						sizeof(inode->i_streams[0]));
 			if (!streams)
 				return NULL;
@@ -289,7 +289,7 @@ inode_add_stream(struct wim_inode *inode, int stream_type,
 			inode->i_streams = streams;
 		}
 	} else {
-		streams = REALLOC(inode->i_streams,
+		streams = realloc(inode->i_streams,
 				  (inode->i_num_streams + 1) *
 					sizeof(inode->i_streams[0]));
 		if (!streams)

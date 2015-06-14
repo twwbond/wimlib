@@ -986,7 +986,7 @@ lzms_create_decompressor(size_t max_bufsize, void **d_ret)
 	if (max_bufsize > LZMS_MAX_BUFFER_SIZE)
 		return WIMLIB_ERR_INVALID_PARAM;
 
-	d = ALIGNED_MALLOC(sizeof(struct lzms_decompressor),
+	d = aligned_malloc(sizeof(struct lzms_decompressor),
 			   DECODE_TABLE_ALIGNMENT);
 	if (!d)
 		return WIMLIB_ERR_NOMEM;
@@ -1034,7 +1034,7 @@ lzms_free_decompressor(void *_d)
 {
 	struct lzms_decompressor *d = _d;
 
-	ALIGNED_FREE(d);
+	aligned_free(d);
 }
 
 const struct decompressor_ops lzms_decompressor_ops = {

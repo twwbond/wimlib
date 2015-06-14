@@ -335,7 +335,7 @@ winnt_get_security_descriptor(HANDLE h, struct wim_inode *inode,
 		switch (status) {
 		case STATUS_BUFFER_TOO_SMALL:
 			wimlib_assert(buf == _buf);
-			buf = MALLOC(len_needed);
+			buf = malloc(len_needed);
 			if (!buf)
 				return STATUS_NO_MEMORY;
 			bufsize = len_needed;
@@ -371,7 +371,7 @@ winnt_get_security_descriptor(HANDLE h, struct wim_inode *inode,
 		status = STATUS_NO_MEMORY;
 out_free_buf:
 	if (unlikely(buf != _buf))
-		FREE(buf);
+		free(buf);
 	return status;
 }
 
@@ -401,7 +401,7 @@ winnt_recurse_directory(HANDLE h,
 	NTSTATUS status;
 	int ret;
 
-	buf = MALLOC(bufsize);
+	buf = malloc(bufsize);
 	if (!buf)
 		return WIMLIB_ERR_NOMEM;
 
@@ -464,7 +464,7 @@ winnt_recurse_directory(HANDLE h,
 		ret = WIMLIB_ERR_READ;
 	}
 out_free_buf:
-	FREE(buf);
+	free(buf);
 	return ret;
 }
 
@@ -808,7 +808,7 @@ winnt_scan_efsrpc_raw_data(struct wim_inode *inode, const wchar_t *nt_path,
 	if (!blob)
 		goto err_nomem;
 
-	blob->file_on_disk = WCSDUP(nt_path);
+	blob->file_on_disk = wcsdup(nt_path);
 	if (!blob->file_on_disk)
 		goto err_nomem;
 	blob->blob_location = BLOB_WIN32_ENCRYPTED;
@@ -891,7 +891,7 @@ build_data_stream_path(const wchar_t *path, size_t path_nchars,
 	if (stream_name_nchars)
 		stream_path_nchars += 1 + stream_name_nchars;
 
-	stream_path = MALLOC((stream_path_nchars + 1) * sizeof(wchar_t));
+	stream_path = malloc((stream_path_nchars + 1) * sizeof(wchar_t));
 	if (stream_path) {
 		p = wmempcpy(stream_path, path, path_nchars);
 		if (stream_name_nchars) {
@@ -1001,9 +1001,9 @@ winnt_scan_data_streams(HANDLE h, const wchar_t *path, size_t path_nchars,
 
 				bufsize *= 2;
 				if (buf == _buf)
-					newbuf = MALLOC(bufsize);
+					newbuf = malloc(bufsize);
 				else
-					newbuf = REALLOC(buf, bufsize);
+					newbuf = realloc(buf, bufsize);
 				if (!newbuf) {
 					ret = WIMLIB_ERR_NOMEM;
 					goto out_free_buf;
@@ -1071,7 +1071,7 @@ unnamed_only:
 out_free_buf:
 	/* Free buffer if allocated on heap.  */
 	if (unlikely(buf != _buf))
-		FREE(buf);
+		free(buf);
 	return ret;
 }
 
@@ -1475,7 +1475,7 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 	/* WARNING: There is no check for overflow later when this buffer is
 	 * being used!  But it's as long as the maximum path length understood
 	 * by Windows NT (which is NOT the same as MAX_PATH).  */
-	path = MALLOC((WINDOWS_NT_MAX_PATH + 1) * sizeof(wchar_t));
+	path = malloc((WINDOWS_NT_MAX_PATH + 1) * sizeof(wchar_t));
 	if (!path)
 		return WIMLIB_ERR_NOMEM;
 
@@ -1509,7 +1509,7 @@ win32_build_dentry_tree(struct wim_dentry **root_ret,
 						path, ntpath_nchars,
 						L"", 0, params, &stats, 0);
 out_free_path:
-	FREE(path);
+	free(path);
 	if (ret == 0)
 		winnt_do_scan_warnings(root_disk_path, &stats);
 	return ret;

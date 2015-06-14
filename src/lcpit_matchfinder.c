@@ -552,8 +552,8 @@ lcpit_matchfinder_init(struct lcpit_matchfinder *mf, size_t max_bufsize,
 	if (max_bufsize > MAX_HUGE_BUFSIZE - PREFETCH_SAFETY)
 		return false;
 
-	mf->pos_data = MALLOC(get_pos_data_size(max_bufsize));
-	mf->intervals = MALLOC(get_intervals_size(max_bufsize));
+	mf->pos_data = malloc(get_pos_data_size(max_bufsize));
+	mf->intervals = malloc(get_intervals_size(max_bufsize));
 	if (!mf->pos_data || !mf->intervals) {
 		lcpit_matchfinder_destroy(mf);
 		return false;
@@ -701,6 +701,6 @@ lcpit_matchfinder_skip_bytes(struct lcpit_matchfinder *mf, u32 count)
 void
 lcpit_matchfinder_destroy(struct lcpit_matchfinder *mf)
 {
-	FREE(mf->pos_data);
-	FREE(mf->intervals);
+	free(mf->pos_data);
+	free(mf->intervals);
 }

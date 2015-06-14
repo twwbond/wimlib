@@ -164,8 +164,8 @@ init_message(struct message *msg, size_t num_chunks, u32 out_chunk_size)
 {
 	msg->num_alloc_chunks = num_chunks;
 	for (size_t i = 0; i < num_chunks; i++) {
-		msg->compressed_chunks[i] = MALLOC(out_chunk_size - 1);
-		msg->uncompressed_chunks[i] = MALLOC(out_chunk_size);
+		msg->compressed_chunks[i] = malloc(out_chunk_size - 1);
+		msg->uncompressed_chunks[i] = malloc(out_chunk_size);
 		if (msg->compressed_chunks[i] == NULL ||
 		    msg->uncompressed_chunks[i] == NULL)
 			return WIMLIB_ERR_NOMEM;
@@ -177,8 +177,8 @@ static void
 destroy_message(struct message *msg)
 {
 	for (size_t i = 0; i < msg->num_alloc_chunks; i++) {
-		FREE(msg->compressed_chunks[i]);
-		FREE(msg->uncompressed_chunks[i]);
+		free(msg->compressed_chunks[i]);
+		free(msg->uncompressed_chunks[i]);
 	}
 }
 
@@ -188,7 +188,7 @@ free_messages(struct message *msgs, size_t num_messages)
 	if (msgs) {
 		for (size_t i = 0; i < num_messages; i++)
 			destroy_message(&msgs[i]);
-		FREE(msgs);
+		free(msgs);
 	}
 }
 
@@ -197,7 +197,7 @@ allocate_messages(size_t count, size_t chunks_per_msg, u32 out_chunk_size)
 {
 	struct message *msgs;
 
-	msgs = CALLOC(count, sizeof(struct message));
+	msgs = calloc(count, sizeof(struct message));
 	if (msgs == NULL)
 		return NULL;
 	for (size_t i = 0; i < count; i++) {
@@ -260,11 +260,11 @@ parallel_chunk_compressor_destroy(struct chunk_compressor *_ctx)
 		for (i = 0; i < ctx->num_thread_data; i++)
 			wimlib_free_compressor(ctx->thread_data[i].compressor);
 
-	FREE(ctx->thread_data);
+	free(ctx->thread_data);
 
 	free_messages(ctx->msgs, ctx->num_messages);
 
-	FREE(ctx);
+	free(ctx);
 }
 
 static void
@@ -433,7 +433,7 @@ new_parallel_chunk_compressor(int out_ctype, u32 out_chunk_size,
 		return -2;
 
 	ret = WIMLIB_ERR_NOMEM;
-	ctx = ZALLOC(sizeof(*ctx));
+	ctx = zalloc(sizeof(*ctx));
 	if (ctx == NULL)
 		goto err;
 
@@ -455,7 +455,7 @@ new_parallel_chunk_compressor(int out_ctype, u32 out_chunk_size,
 		goto err;
 
 	ret = WIMLIB_ERR_NOMEM;
-	ctx->thread_data = CALLOC(num_threads, sizeof(ctx->thread_data[0]));
+	ctx->thread_data = calloc(num_threads, sizeof(ctx->thread_data[0]));
 	if (ctx->thread_data == NULL)
 		goto err;
 

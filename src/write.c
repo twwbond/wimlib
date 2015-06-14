@@ -420,8 +420,8 @@ begin_chunk_table(struct write_blobs_ctx *ctx, u64 res_expected_size)
 			return WIMLIB_ERR_NOMEM;
 		}
 
-		FREE(ctx->chunk_csizes);
-		ctx->chunk_csizes = MALLOC(new_length * sizeof(ctx->chunk_csizes[0]));
+		free(ctx->chunk_csizes);
+		ctx->chunk_csizes = malloc(new_length * sizeof(ctx->chunk_csizes[0]));
 		if (ctx->chunk_csizes == NULL) {
 			ctx->num_alloc_chunks = 0;
 			return WIMLIB_ERR_NOMEM;
@@ -1612,7 +1612,7 @@ out_write_raw_copy_resources:
 				       &ctx.progress_data);
 
 out_destroy_context:
-	FREE(ctx.chunk_csizes);
+	free(ctx.chunk_csizes);
 	if (ctx.compressor)
 		ctx.compressor->destroy(ctx.compressor);
 	return ret;
@@ -1723,7 +1723,7 @@ struct blob_size_table {
 static int
 init_blob_size_table(struct blob_size_table *tab, size_t capacity)
 {
-	tab->array = CALLOC(capacity, sizeof(tab->array[0]));
+	tab->array = calloc(capacity, sizeof(tab->array[0]));
 	if (tab->array == NULL)
 		return WIMLIB_ERR_NOMEM;
 	tab->num_entries = 0;
@@ -1734,7 +1734,7 @@ init_blob_size_table(struct blob_size_table *tab, size_t capacity)
 static void
 destroy_blob_size_table(struct blob_size_table *tab)
 {
-	FREE(tab->array);
+	free(tab->array);
 }
 
 static int

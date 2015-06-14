@@ -365,12 +365,12 @@ win32_get_drive_path(const wchar_t *file_path, wchar_t drive_path[7])
 
 	if (file_abspath[0] == L'\0' || file_abspath[1] != L':') {
 		ERROR("\"%ls\": Path format not recognized", file_abspath);
-		FREE(file_abspath);
+		free(file_abspath);
 		return WIMLIB_ERR_UNSUPPORTED;
 	}
 
 	wsprintf(drive_path, L"\\\\.\\%lc:", file_abspath[0]);
-	FREE(file_abspath);
+	free(file_abspath);
 	return 0;
 }
 
@@ -423,14 +423,14 @@ retry:
 	else
 		WARNING("%ls", buf);
 	if (buf != _buf)
-		FREE(buf);
+		free(buf);
 	return;
 
 realloc:
 	if (buf != _buf)
-		FREE(buf);
+		free(buf);
 	buflen *= 2;
-	buf = MALLOC(buflen * sizeof(buf[0]));
+	buf = malloc(buflen * sizeof(buf[0]));
 	if (buf)
 		goto retry;
 	ERROR("Ran out of memory while building error message!!!");

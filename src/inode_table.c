@@ -34,7 +34,7 @@
 int
 init_inode_table(struct wim_inode_table *table, size_t capacity)
 {
-	table->array = CALLOC(capacity, sizeof(table->array[0]));
+	table->array = calloc(capacity, sizeof(table->array[0]));
 	if (!table->array)
 		return WIMLIB_ERR_NOMEM;
 	table->num_entries = 0;
@@ -47,7 +47,7 @@ init_inode_table(struct wim_inode_table *table, size_t capacity)
 void
 destroy_inode_table(struct wim_inode_table *table)
 {
-	FREE(table->array);
+	free(table->array);
 }
 
 /*

@@ -275,7 +275,7 @@ read_compressed_wim_resource(const struct wim_resource_descriptor * const rdesc,
 		if (likely(chunk_offsets_alloc_size <= STACK_MAX)) {
 			chunk_offsets = alloca(chunk_offsets_alloc_size);
 		} else {
-			chunk_offsets = MALLOC(chunk_offsets_alloc_size);
+			chunk_offsets = malloc(chunk_offsets_alloc_size);
 			if (unlikely(!chunk_offsets))
 				goto oom;
 			chunk_offsets_malloced = true;
@@ -345,7 +345,7 @@ read_compressed_wim_resource(const struct wim_resource_descriptor * const rdesc,
 	if (chunk_size <= STACK_MAX) {
 		ubuf = alloca(chunk_size);
 	} else {
-		ubuf = MALLOC(chunk_size);
+		ubuf = malloc(chunk_size);
 		if (unlikely(!ubuf))
 			goto oom;
 		ubuf_malloced = true;
@@ -358,7 +358,7 @@ read_compressed_wim_resource(const struct wim_resource_descriptor * const rdesc,
 	if (chunk_size - 1 <= STACK_MAX) {
 		cbuf = alloca(chunk_size - 1);
 	} else {
-		cbuf = MALLOC(chunk_size - 1);
+		cbuf = malloc(chunk_size - 1);
 		if (unlikely(!cbuf))
 			goto oom;
 		cbuf_malloced = true;
@@ -516,11 +516,11 @@ out_cleanup:
 		rdesc->wim->decompressor_max_block_size = chunk_size;
 	}
 	if (chunk_offsets_malloced)
-		FREE(chunk_offsets);
+		free(chunk_offsets);
 	if (ubuf_malloced)
-		FREE(ubuf);
+		free(ubuf);
 	if (cbuf_malloced)
-		FREE(cbuf);
+		free(cbuf);
 	return ret;
 
 oom:
@@ -784,13 +784,13 @@ read_blob_into_alloc_buf(const struct blob_descriptor *blob, void **buf_ret)
 		return WIMLIB_ERR_NOMEM;
 	}
 
-	buf = MALLOC(blob->size);
+	buf = malloc(blob->size);
 	if (unlikely(!buf))
 		return WIMLIB_ERR_NOMEM;
 
 	ret = read_blob_into_buf(blob, buf);
 	if (unlikely(ret)) {
-		FREE(buf);
+		free(buf);
 		return ret;
 	}
 
@@ -1022,7 +1022,7 @@ read_blobs_in_solid_resource(struct blob_descriptor *first_blob,
 		ranges = alloca(ranges_alloc_size);
 		ranges_malloced = false;
 	} else {
-		ranges = MALLOC(ranges_alloc_size);
+		ranges = malloc(ranges_alloc_size);
 		if (unlikely(!ranges))
 			goto oom;
 		ranges_malloced = true;
@@ -1053,7 +1053,7 @@ read_blobs_in_solid_resource(struct blob_descriptor *first_blob,
 					   blob_count, &cbs);
 
 	if (ranges_malloced)
-		FREE(ranges);
+		free(ranges);
 
 	if (unlikely(ret && blobifier_ctx.cur_blob_offset != 0)) {
 		ret = call_end_blob(blobifier_ctx.cur_blob, ret,

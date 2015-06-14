@@ -126,7 +126,7 @@ static inline void
 tstr_put_utf16le(const utf16lechar *ustr)
 {
 #if !TCHAR_IS_UTF16LE
-	FREE((void *)ustr);
+	free((void *)ustr);
 #endif
 }
 
@@ -152,7 +152,7 @@ static inline void
 utf16le_put_tstr(const tchar *tstr)
 {
 #if !TCHAR_IS_UTF16LE
-	FREE((void *)tstr);
+	free((void *)tstr);
 #endif
 }
 
