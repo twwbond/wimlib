@@ -77,6 +77,8 @@
 	 WIMLIB_EXTRACT_FLAG_TO_STDOUT			|	\
 	 WIMLIB_EXTRACT_FLAG_REPLACE_INVALID_FILENAMES	|	\
 	 WIMLIB_EXTRACT_FLAG_ALL_CASE_CONFLICTS		|	\
+	 WIMLIB_EXTRACT_FLAG_ALL_DATA_BLOBS		|	\
+	 WIMLIB_EXTRACT_FLAG_ALL_METADATA_BLOBS	|	\
 	 WIMLIB_EXTRACT_FLAG_STRICT_TIMESTAMPS		|	\
 	 WIMLIB_EXTRACT_FLAG_STRICT_SHORT_NAMES		|	\
 	 WIMLIB_EXTRACT_FLAG_STRICT_SYMLINKS		|	\
@@ -443,6 +445,15 @@ extract_blob_list(struct apply_ctx *ctx, const struct read_blob_callbacks *cbs)
 	}
 }
 
+static int
+extract_blob_to_stdout(struct blob_descriptor *blob)
+{
+	struct filedes _stdout;
+
+	filedes_init(&_stdout, STDOUT_FILENO);
+	return extract_blob_to_fd(blob, &_stdout);
+}
+
 /* Extract a WIM dentry to standard output.
  *
  * This obviously doesn't make sense in all cases.  We return an error if the
@@ -454,7 +465,6 @@ extract_dentry_to_stdout(struct wim_dentry *dentry,
 {
 	struct wim_inode *inode = dentry->d_inode;
 	struct blob_descriptor *blob;
-	struct filedes _stdout;
 
 	if (inode->i_attributes & (FILE_ATTRIBUTE_REPARSE_POINT |
 				   FILE_ATTRIBUTE_DIRECTORY |
@@ -473,8 +483,7 @@ extract_dentry_to_stdout(struct wim_dentry *dentry,
 		return 0;
 	}
 
-	filedes_init(&_stdout, STDOUT_FILENO);
-	return extract_blob_to_fd(blob, &_stdout);
+	return extract_blob_to_stdout(blob);
 }
 
 static int
@@ -1940,4 +1949,164 @@ wimlib_extract_image(WIMStruct *wim, int image, const tchar *target,
 	if (extract_flags & ~WIMLIB_EXTRACT_MASK_PUBLIC)
 		return WIMLIB_ERR_INVALID_PARAM;
 	return do_wimlib_extract_image(wim, image, target, extract_flags);
+}
+
+/* Extract a list of blobs to the specified directory.
+ *
+ * This is somewhat of a hack: we generate a temporary WIM in memory so that we
+ * can just send it through the regular extraction code.  */
+static int
+do_wimlib_extract_blobs(struct list_head *blob_list, const tchar *target,
+			wimlib_progress_func_t progfunc, void *progctx,
+			int extract_flags)
+{
+	WIMStruct *tmp_wim = NULL;
+	int ret;
+	struct blob_descriptor *blob;
+	tchar name_buf[SHA1_HASH_SIZE * 2 + 1];
+	struct wim_dentry *root_dentry;
+	struct wim_dentry *dentry;
+	struct wim_dentry *existing;
+	struct wim_image_metadata *imd;
+	const tchar *root_path = WIMLIB_WIM_ROOT_PATH;
+
+	if (extract_flags & WIMLIB_EXTRACT_FLAG_TO_STDOUT) {
+		list_for_each_entry(blob, blob_list, extraction_list) {
+			ret = extract_blob_to_stdout(blob);
+			if (ret)
+				goto out;
+		}
+		return 0;
+	}
+
+	ret = wimlib_create_new_wim(WIMLIB_COMPRESSION_TYPE_NONE, &tmp_wim);
+	if (ret)
+		goto out;
+
+	wimlib_register_progress_function(tmp_wim, progfunc, progctx);
+
+	ret = wimlib_add_empty_image(tmp_wim, NULL, NULL);
+	if (ret)
+		goto out;
+
+	ret = select_wim_image(tmp_wim, 1);
+	if (ret)
+		goto out;
+
+	ret = new_filler_directory(&root_dentry);
+	if (ret)
+		goto out;
+
+	imd = wim_get_current_image_metadata(tmp_wim);
+
+	imd->root_dentry = root_dentry;
+
+	list_for_each_entry(blob, blob_list, extraction_list) {
+
+		sprint_hash(blob->hash, name_buf);
+
+		ret = new_dentry_with_new_inode(name_buf, true, &dentry);
+		if (ret)
+			goto out;
+
+		ret = WIMLIB_ERR_NOMEM;
+		if (!inode_add_stream(dentry->d_inode, STREAM_TYPE_DATA,
+				      NO_STREAM_NAME, blob))
+			goto out;
+		hlist_add_head(&dentry->d_inode->i_hlist_node, &imd->inode_list);
+
+		existing = dentry_add_child(root_dentry, dentry);
+		wimlib_assert(!existing);
+	}
+
+	ret = do_wimlib_extract_paths(tmp_wim, 1, target, &root_path, 1,
+				      extract_flags);
+out:
+	wimlib_free(tmp_wim);
+	return ret;
+}
+
+static struct blob_descriptor *
+lookup_data_or_metadata_blob(WIMStruct *wim, const u8 *hash)
+{
+	struct blob_descriptor *blob;
+
+	blob = lookup_blob(wim->blob_table, hash);
+	if (blob)
+		return blob;
+
+	if (wim_has_metadata(wim))
+		for (int i = 0; i < wim->hdr.image_count; i++)
+			if (hashes_equal(hash, wim->image_metadata[i]-> metadata_blob->hash))
+				return wim->image_metadata[i]->metadata_blob;
+	return NULL;
+}
+
+static int
+add_blob_to_list(struct blob_descriptor *blob, void *_list)
+{
+	list_add(&blob->extraction_list, (struct list_head *)_list);
+	return 0;
+}
+
+/* Extract the specified blobs from a WIM to a directory.  */
+WIMLIBAPI int
+wimlib_extract_blobs(WIMStruct *wim, const u8 *blob_sha1s, size_t num_blobs,
+		     const tchar *target, int extract_flags)
+{
+	const u8 *hashptr;
+	const u8 *hashend;
+	struct blob_descriptor *blob;
+
+	LIST_HEAD(blob_list);
+
+	if (!wim || !target || !*target)
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	if (num_blobs && !blob_sha1s)
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	if (extract_flags & ~WIMLIB_EXTRACT_MASK_PUBLIC)
+		return WIMLIB_ERR_INVALID_PARAM;
+
+	extract_flags &= ~WIMLIB_EXTRACT_FLAG_GLOB_PATHS;
+
+	if (extract_flags & (WIMLIB_EXTRACT_FLAG_ALL_DATA_BLOBS |
+			     WIMLIB_EXTRACT_FLAG_ALL_METADATA_BLOBS))
+	{
+		/* Add all the data blobs.  */
+		if (extract_flags & WIMLIB_EXTRACT_FLAG_ALL_DATA_BLOBS)
+			for_blob_in_table(wim->blob_table, add_blob_to_list,
+					  &blob_list);
+
+		/* Also add the metadata blobs.  */
+		if ((extract_flags & WIMLIB_EXTRACT_FLAG_ALL_METADATA_BLOBS)
+		    && wim_has_metadata(wim))
+			for (int i = 0; i < wim->hdr.image_count; i++)
+				add_blob_to_list(wim->image_metadata[i]->metadata_blob,
+						 &blob_list);
+	} else {
+		hashptr = blob_sha1s;
+		hashend = hashptr + (num_blobs * SHA1_HASH_SIZE);
+
+		/* Look up each blob requested.  */
+		for (; hashptr != hashend; hashptr += SHA1_HASH_SIZE) {
+
+			blob = lookup_data_or_metadata_blob(wim, hashptr);
+			if (!blob) {
+				if (wimlib_print_errors) {
+					tchar hashstr[SHA1_HASH_SIZE * 2 + 1];
+					sprint_hash(hashptr, hashstr);
+					ERROR("Stream SHA1=%"TS" not found",
+					      hashstr);
+				}
+				return WIMLIB_ERR_RESOURCE_NOT_FOUND;
+			}
+			add_blob_to_list(blob, &blob_list);
+		}
+	}
+
+	/* Extract the blobs.  */
+	return do_wimlib_extract_blobs(&blob_list, target, wim->progfunc,
+				       wim->progctx, extract_flags);
 }

@@ -155,6 +155,10 @@ enum {
 	IMAGEX_DEREFERENCE_OPTION,
 	IMAGEX_DEST_DIR_OPTION,
 	IMAGEX_DETAILED_OPTION,
+	IMAGEX_DUMP_BLOB_OPTION,
+	IMAGEX_DUMP_DATA_BLOBS_OPTION,
+	IMAGEX_DUMP_METADATA_BLOBS_OPTION,
+	IMAGEX_DUMP_ALL_BLOBS_OPTION,
 	IMAGEX_EXTRACT_XML_OPTION,
 	IMAGEX_FLAGS_OPTION,
 	IMAGEX_FORCE_OPTION,
@@ -180,7 +184,6 @@ enum {
 	IMAGEX_RECOMPRESS_OPTION,
 	IMAGEX_RECURSIVE_OPTION,
 	IMAGEX_REF_OPTION,
-	IMAGEX_RESUME_OPTION,
 	IMAGEX_RPFIX_OPTION,
 	IMAGEX_SOFT_OPTION,
 	IMAGEX_SOLID_CHUNK_SIZE_OPTION,
@@ -212,9 +215,6 @@ static const struct option apply_options[] = {
 	{T("rpfix"),       no_argument,       NULL, IMAGEX_RPFIX_OPTION},
 	{T("norpfix"),     no_argument,       NULL, IMAGEX_NORPFIX_OPTION},
 	{T("include-invalid-names"), no_argument,       NULL, IMAGEX_INCLUDE_INVALID_NAMES_OPTION},
-
-	/* --resume is undocumented for now as it needs improvement.  */
-	{T("resume"),      no_argument,       NULL, IMAGEX_RESUME_OPTION},
 	{T("wimboot"),     no_argument,       NULL, IMAGEX_WIMBOOT_OPTION},
 	{NULL, 0, NULL, 0},
 };
@@ -310,6 +310,10 @@ static const struct option extract_options[] = {
 	{T("nullglob"),     no_argument,      NULL, IMAGEX_NULLGLOB_OPTION},
 	{T("preserve-dir-structure"), no_argument, NULL, IMAGEX_PRESERVE_DIR_STRUCTURE_OPTION},
 	{T("wimboot"),     no_argument,       NULL, IMAGEX_WIMBOOT_OPTION},
+	{T("dump-blob"), required_argument,     NULL, IMAGEX_DUMP_BLOB_OPTION},
+	{T("dump-data-blobs"), no_argument,     NULL, IMAGEX_DUMP_DATA_BLOBS_OPTION},
+	{T("dump-metadata-blobs"), no_argument, NULL, IMAGEX_DUMP_METADATA_BLOBS_OPTION},
+	{T("dump-all-blobs"), no_argument,      NULL, IMAGEX_DUMP_ALL_BLOBS_OPTION},
 	{NULL, 0, NULL, 0},
 };
 
@@ -990,6 +994,41 @@ stdin_get_text_contents(size_t *num_tchars_ret)
 	return translate_text_to_tstr(contents, num_bytes, num_tchars_ret);
 }
 
+static int
+parse_sha1(const tchar *hashstr, uint8_t hash[20])
+{
+	if (tstrlen(hashstr) != 40)
+		goto invalid;
+
+	for (int i = 0; i < 20; i++) {
+		tchar high = totlower(hashstr[i * 2 + 0]);
+		tchar low = totlower(hashstr[i * 2 + 1]);
+		uint8_t byte = 0;
+
+		if (high >= '0' && high <= '9')
+			byte |= (high - '0') << 4;
+		else if (high >= 'a' && high <= 'f')
+			byte |= (high - 'a' + 10) << 4;
+		else
+			goto invalid;
+
+		if (low >= '0' && low <= '9')
+			byte |= (low - '0');
+		else if (low >= 'a' && low <= 'f')
+			byte |= (low - 'a' + 10);
+		else
+			goto invalid;
+		hash[i] = byte;
+	}
+
+	return 0;
+
+invalid:
+	imagex_error("\"%"TS"\" is not a well-formed SHA-1 message digest!",
+		     hashstr);
+	return -1;
+}
+
 #define TO_PERCENT(numerator, denominator) \
 	(((denominator) == 0) ? 0 : ((numerator) * 100 / (denominator)))
 
@@ -1604,9 +1643,6 @@ imagex_apply(int argc, tchar **argv, int cmd)
 		case IMAGEX_INCLUDE_INVALID_NAMES_OPTION:
 			extract_flags |= WIMLIB_EXTRACT_FLAG_REPLACE_INVALID_FILENAMES;
 			extract_flags |= WIMLIB_EXTRACT_FLAG_ALL_CASE_CONFLICTS;
-			break;
-		case IMAGEX_RESUME_OPTION:
-			extract_flags |= WIMLIB_EXTRACT_FLAG_RESUME;
 			break;
 		case IMAGEX_WIMBOOT_OPTION:
 			extract_flags |= WIMLIB_EXTRACT_FLAG_WIMBOOT;
@@ -2974,6 +3010,7 @@ imagex_extract(int argc, tchar **argv, int cmd)
 			    WIMLIB_EXTRACT_FLAG_GLOB_PATHS |
 			    WIMLIB_EXTRACT_FLAG_STRICT_GLOB;
 	int notlist_extract_flags = WIMLIB_EXTRACT_FLAG_NO_PRESERVE_DIR_STRUCTURE;
+	const tchar *blob_to_dump = NULL;
 
 	STRING_SET(refglobs);
 
@@ -3029,12 +3066,55 @@ imagex_extract(int argc, tchar **argv, int cmd)
 		case IMAGEX_WIMBOOT_OPTION:
 			extract_flags |= WIMLIB_EXTRACT_FLAG_WIMBOOT;
 			break;
+		case IMAGEX_DUMP_DATA_BLOBS_OPTION:
+			extract_flags |= WIMLIB_EXTRACT_FLAG_ALL_DATA_BLOBS;
+			break;
+		case IMAGEX_DUMP_METADATA_BLOBS_OPTION:
+			extract_flags |= WIMLIB_EXTRACT_FLAG_ALL_METADATA_BLOBS;
+			break;
+		case IMAGEX_DUMP_ALL_BLOBS_OPTION:
+			extract_flags |= WIMLIB_EXTRACT_FLAG_ALL_DATA_BLOBS |
+					 WIMLIB_EXTRACT_FLAG_ALL_METADATA_BLOBS;
+			break;
+		case IMAGEX_DUMP_BLOB_OPTION:
+			blob_to_dump = optarg;
+			break;
 		default:
 			goto out_usage;
 		}
 	}
 	argc -= optind;
 	argv += optind;
+
+	if (blob_to_dump ||
+	    (extract_flags & (WIMLIB_EXTRACT_FLAG_ALL_DATA_BLOBS |
+			      WIMLIB_EXTRACT_FLAG_ALL_METADATA_BLOBS)))
+	{
+		uint8_t hash[20];
+		unsigned num_hashes = 0;
+
+		if (argc != 1) {
+			imagex_error(T("Can't specify an image in combination "
+				       "with any of the \"dump blobs\" "
+				       "options"));
+			goto out_err;
+		}
+
+		ret = wimlib_open_wim_with_progress(argv[0], open_flags, &wim,
+						    imagex_progress_func, NULL);
+		if (ret)
+			goto out_free_refglobs;
+
+		if (blob_to_dump) {
+			ret = parse_sha1(blob_to_dump, hash);
+			if (ret)
+				goto out_wimlib_free;
+			num_hashes++;
+		}
+		ret = wimlib_extract_blobs(wim, hash, num_hashes, dest_dir,
+					   extract_flags);
+		goto out_wimlib_free;
+	}
 
 	if (argc < 2)
 		goto out_usage;
