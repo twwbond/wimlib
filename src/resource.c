@@ -813,27 +813,6 @@ wim_reshdr_to_data(const struct wim_reshdr *reshdr, WIMStruct *wim,
 	return read_blob_into_alloc_buf(&blob, buf_ret);
 }
 
-/* Calculate the SHA-1 message digest of the uncompressed data of the specified
- * WIM resource.  */
-int
-wim_reshdr_to_hash(const struct wim_reshdr *reshdr, WIMStruct *wim,
-		   u8 hash[SHA1_HASH_SIZE])
-{
-	struct wim_resource_descriptor rdesc;
-	struct blob_descriptor blob;
-	int ret;
-
-	wim_reshdr_to_desc_and_blob(reshdr, wim, &rdesc, &blob);
-	blob.unhashed = 1;
-
-	ret = sha1_blob(&blob);
-	if (unlikely(ret))
-		return ret;
-
-	copy_hash(hash, blob.hash);
-	return 0;
-}
-
 struct blobifier_context {
 	struct read_blob_callbacks cbs;
 	struct blob_descriptor *cur_blob;

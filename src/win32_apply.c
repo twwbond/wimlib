@@ -56,12 +56,10 @@ struct win32_apply_ctx {
 		struct wimboot_wim {
 			WIMStruct *wim;
 			u64 data_source_id;
-			u8 blob_table_hash[SHA1_HASH_SIZE];
 		} *wims;
 		size_t num_wims;
 		struct string_set *prepopulate_pats;
 		void *mem_prepopulate_pats;
-		bool wof_running;
 		bool tried_to_load_prepopulate_list;
 
 		bool have_wrong_version_wims;
@@ -556,9 +554,7 @@ set_external_backing(HANDLE h, struct wim_inode *inode, struct win32_apply_ctx *
 
 	if (unlikely(!wimboot_set_pointer(h,
 					  blob,
-					  wimboot_wim->data_source_id,
-					  wimboot_wim->blob_table_hash,
-					  ctx->wimboot.wof_running)))
+					  wimboot_wim->data_source_id)))
 	{
 		const DWORD err = GetLastError();
 
@@ -568,13 +564,6 @@ set_external_backing(HANDLE h, struct wim_inode *inode, struct win32_apply_ctx *
 		return WIMLIB_ERR_WIMBOOT;
 	}
 	return 0;
-}
-
-/* Calculates the SHA-1 message digest of the WIM's blob table.  */
-static int
-hash_blob_table(WIMStruct *wim, u8 hash[SHA1_HASH_SIZE])
-{
-	return wim_reshdr_to_hash(&wim->hdr.blob_table_reshdr, wim, hash);
 }
 
 static int
@@ -598,16 +587,11 @@ register_wim_with_wof(WIMStruct *wim, struct win32_apply_ctx *ctx)
 
 	ctx->wimboot.wims[ctx->wimboot.num_wims].wim = wim;
 
-	ret = hash_blob_table(wim, ctx->wimboot.wims[ctx->wimboot.num_wims].blob_table_hash);
-	if (ret)
-		return ret;
-
 	ret = wimboot_alloc_data_source_id(wim->filename,
 					   wim->hdr.guid,
 					   ctx->common.wim->current_image,
 					   ctx->common.target,
-					   &ctx->wimboot.wims[ctx->wimboot.num_wims].data_source_id,
-					   &ctx->wimboot.wof_running);
+					   &ctx->wimboot.wims[ctx->wimboot.num_wims].data_source_id);
 	if (ret)
 		return ret;
 

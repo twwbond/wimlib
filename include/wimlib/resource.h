@@ -186,10 +186,6 @@ wim_reshdr_to_data(const struct wim_reshdr *reshdr, WIMStruct *wim,
 		   void **buf_ret);
 
 extern int
-wim_reshdr_to_hash(const struct wim_reshdr *reshdr, WIMStruct *wim,
-		   u8 hash[SHA1_HASH_SIZE]);
-
-extern int
 skip_wim_resource(const struct wim_resource_descriptor *rdesc);
 
 /* Callback functions for reading blobs  */
