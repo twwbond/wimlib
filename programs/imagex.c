@@ -133,11 +133,10 @@ static void usage_all(FILE *fp);
 static void recommend_man_page(int cmd, FILE *fp);
 static const tchar *get_cmd_string(int cmd, bool nospace);
 
-static bool imagex_be_quiet = false;
+static bool imagex_be_quiet = true;
 static FILE *imagex_info_file;
 
-#define imagex_printf(format, ...) \
-		tfprintf(imagex_info_file, format, ##__VA_ARGS__)
+#define imagex_printf(format, ...)
 
 enum {
 	IMAGEX_ALLOW_OTHER_OPTION,

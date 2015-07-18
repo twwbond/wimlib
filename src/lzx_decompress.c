@@ -54,6 +54,8 @@
 #  include "config.h"
 #endif
 
+#define VERBOSE 0
+
 #include <string.h>
 
 #include "wimlib/decompressor_ops.h"
@@ -449,6 +451,9 @@ lzx_decompress_block(int block_type, u32 block_size,
 		mainsym = read_huffsym_using_maincode(istream, tables);
 		if (mainsym < LZX_NUM_CHARS) {
 			/* Literal  */
+		#if VERBOSE
+			printf("%tu\tL\t%u\t%u\n", window_ptr - window, mainsym, (window_ptr==window?0:*(window_ptr-1)));
+		#endif
 			*window_ptr++ = mainsym;
 			continue;
 		}
@@ -475,6 +480,9 @@ lzx_decompress_block(int block_type, u32 block_size,
 			match_offset = queue->R[offset_slot];
 			queue->R[offset_slot] = queue->R[0];
 			queue->R[0] = match_offset;
+		#if VERBOSE
+			printf("%tu\tR\t%u\t%u\t%u\n", window_ptr - window, match_len, match_offset, offset_slot);
+		#endif
 		} else {
 			/* Explicit offset  */
 
@@ -504,10 +512,14 @@ lzx_decompress_block(int block_type, u32 block_size,
 			match_offset -= LZX_OFFSET_ADJUSTMENT;
 
 			/* Update the match offset LRU queue.  */
-			BUILD_BUG_ON(LZX_NUM_RECENT_OFFSETS != 3);
-			queue->R[2] = queue->R[1];
+			BUILD_BUG_ON(LZX_NUM_RECENT_OFFSETS != 2);
+			/*queue->R[2] = queue->R[1];*/
 			queue->R[1] = queue->R[0];
 			queue->R[0] = match_offset;
+		#if VERBOSE
+			printf("%tu\tM\t%u\t%u\t%u\n", window_ptr - window, match_len, match_offset,
+			       offset_slot);
+		#endif
 		}
 
 		/* Validate the match, then copy it to the current position.  */

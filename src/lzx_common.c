@@ -42,32 +42,22 @@
 /* Mapping: offset slot => first match offset that uses that offset slot.
  */
 const u32 lzx_offset_slot_base[LZX_MAX_OFFSET_SLOTS + 1] = {
-	0      , 1      , 2      , 3      , 4      ,	/* 0  --- 4  */
-	6      , 8      , 12     , 16     , 24     ,	/* 5  --- 9  */
-	32     , 48     , 64     , 96     , 128    ,    /* 10 --- 14 */
-	192    , 256    , 384    , 512    , 768    ,    /* 15 --- 19 */
-	1024   , 1536   , 2048   , 3072   , 4096   ,    /* 20 --- 24 */
-	6144   , 8192   , 12288  , 16384  , 24576  ,    /* 25 --- 29 */
-	32768  , 49152  , 65536  , 98304  , 131072 ,    /* 30 --- 34 */
-	196608 , 262144 , 393216 , 524288 , 655360 ,    /* 35 --- 39 */
-	786432 , 917504 , 1048576, 1179648, 1310720,    /* 40 --- 44 */
-	1441792, 1572864, 1703936, 1835008, 1966080,    /* 45 --- 49 */
-	2097152						/* extra     */
+	0, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608, 16777216, 33554432, 67108864, 134217728, 268435456, 536870912
 };
 
 /* Mapping: offset slot => how many extra bits must be read and added to the
  * corresponding offset slot base to decode the match offset.  */
-const u8 lzx_extra_offset_bits[LZX_MAX_OFFSET_SLOTS] = {
-	0 , 0 , 0 , 0 , 1 ,
-	1 , 2 , 2 , 3 , 3 ,
-	4 , 4 , 5 , 5 , 6 ,
-	6 , 7 , 7 , 8 , 8 ,
-	9 , 9 , 10, 10, 11,
-	11, 12, 12, 13, 13,
-	14, 14, 15, 15, 16,
-	16, 17, 17, 17, 17,
-	17, 17, 17, 17, 17,
-	17, 17, 17, 17, 17,
+u8 lzx_extra_offset_bits[LZX_MAX_OFFSET_SLOTS] = {
+	/*0 , 0 , 0 , 0 , 1 ,*/
+	/*1 , 2 , 2 , 3 , 3 ,*/
+	/*4 , 4 , 5 , 5 , 6 ,*/
+	/*6 , 7 , 7 , 8 , 8 ,*/
+	/*9 , 9 , 10, 10, 11,*/
+	/*11, 12, 12, 13, 13,*/
+	/*14, 14, 15, 15, 16,*/
+	/*16, 17, 17, 17, 17,*/
+	/*17, 17, 17, 17, 17,*/
+	/*17, 17, 17, 17, 17,*/
 };
 
 /* Round the specified buffer size up to the next valid LZX window size, and
@@ -76,6 +66,10 @@ const u8 lzx_extra_offset_bits[LZX_MAX_OFFSET_SLOTS] = {
 unsigned
 lzx_get_window_order(size_t max_bufsize)
 {
+	for (u32 i = 0; i < ARRAY_LEN(lzx_offset_slot_base) - 1; i++) {
+		lzx_extra_offset_bits[i] = fls32(lzx_offset_slot_base[i+1]-lzx_offset_slot_base[i]);
+	}
+
 	unsigned order;
 
 	if (max_bufsize == 0 || max_bufsize > LZX_MAX_WINDOW_SIZE)

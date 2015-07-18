@@ -83,7 +83,7 @@
 #define LZX_DEFAULT_BLOCK_SIZE	32768
 
 /* Number of offsets in the recent (or "repeat") offsets queue.  */
-#define LZX_NUM_RECENT_OFFSETS	3
+#define LZX_NUM_RECENT_OFFSETS	2
 
 /* An offset of n bytes is actually encoded as (n + LZX_OFFSET_ADJUSTMENT).  */
 #define LZX_OFFSET_ADJUSTMENT	(LZX_NUM_RECENT_OFFSETS - 1)

@@ -1338,30 +1338,6 @@ lzx_find_min_cost_path(struct lzx_compressor * const restrict c,
 
 		R1_done:
 
-			/* Consider R2 match  */
-			matchptr = in_next - lzx_lru_queue_R2(QUEUE(in_next));
-			if (load_u16_unaligned(matchptr) != load_u16_unaligned(in_next))
-				goto R2_done;
-			if (matchptr[next_len - 1] != in_next[next_len - 1])
-				goto R2_done;
-			for (unsigned len = 2; len < next_len - 1; len++)
-				if (matchptr[len] != in_next[len])
-					goto R2_done;
-			do {
-				u32 cost = cur_node->cost +
-					   c->costs.match_cost[2][
-							next_len - LZX_MIN_MATCH_LEN];
-				if (cost <= (cur_node + next_len)->cost) {
-					(cur_node + next_len)->cost = cost;
-					(cur_node + next_len)->item =
-						(2 << OPTIMUM_OFFSET_SHIFT) | next_len;
-				}
-				if (unlikely(++next_len > max_len)) {
-					cache_ptr = end_matches;
-					goto done_matches;
-				}
-			} while (in_next[next_len - 1] == matchptr[next_len - 1]);
-
 		R2_done:
 
 			while (next_len > cache_ptr->length)
@@ -1734,7 +1710,6 @@ lzx_find_longest_repeat_offset_match(const u8 * const in_next,
 				     struct lzx_lru_queue queue,
 				     unsigned *rep_max_idx_ret)
 {
-	BUILD_BUG_ON(LZX_NUM_RECENT_OFFSETS != 3);
 	LZX_ASSERT(bytes_remaining >= 2);
 
 	const unsigned max_len = min(bytes_remaining, LZX_MAX_MATCH_LEN);
