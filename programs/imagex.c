@@ -2682,8 +2682,8 @@ imagex_export(int argc, tchar **argv, int cmd)
 	const tchar *src_image_num_or_name;
 	const tchar *dest_wimfile;
 	int dest_wim_fd;
-	const tchar *dest_name;
-	const tchar *dest_desc;
+	const tchar *dest_name = NULL;
+	const tchar *dest_desc = NULL;
 	WIMStruct *src_wim;
 	struct wimlib_wim_info src_info;
 	WIMStruct *dest_wim;
@@ -2770,13 +2770,23 @@ imagex_export(int argc, tchar **argv, int cmd)
 	}
 	argc -= optind;
 	argv += optind;
-	if (argc < 3 || argc > 5)
+
+	if (argc < 2 || argc > 5)
 		goto out_usage;
-	src_wimfile           = argv[0];
-	src_image_num_or_name = argv[1];
-	dest_wimfile          = argv[2];
-	dest_name             = (argc >= 4) ? argv[3] : NULL;
-	dest_desc             = (argc >= 5) ? argv[4] : NULL;
+
+	src_wimfile = argv[0];
+	if (argc == 2) {
+		src_image_num_or_name = T("*");
+		dest_wimfile = argv[1];
+	} else {
+		src_image_num_or_name = argv[1];
+		dest_wimfile = argv[2];
+		if (argc >= 4)
+			dest_name = argv[3];
+		if (argc >= 5)
+			dest_desc = argv[4];
+	}
+
 	ret = wimlib_open_wim_with_progress(src_wimfile, open_flags, &src_wim,
 					    imagex_progress_func, NULL);
 	if (ret)
@@ -4232,7 +4242,7 @@ T(
 ),
 [CMD_EXPORT] =
 T(
-"    %"TS" SRC_WIMFILE SRC_IMAGE DEST_WIMFILE\n"
+"    %"TS" SRC_WIMFILE [SRC_IMAGE] DEST_WIMFILE\n"
 "                        [DEST_IMAGE_NAME [DEST_IMAGE_DESC]]\n"
 "                    [--boot] [--check] [--nocheck] [--compress=TYPE]\n"
 "                    [--ref=\"GLOB\"] [--threads=NUM_THREADS] [--rebuild]\n"

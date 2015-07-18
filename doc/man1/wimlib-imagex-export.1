@@ -2,7 +2,7 @@
 .SH NAME
 wimlib-imagex-export \- Exports an image from a WIM archive to an existing or new WIM archive
 .SH SYNOPSIS
-\fBwimlib-imagex export\fR \fISRC_WIMFILE\fR \fISRC_IMAGE\fR
+\fBwimlib-imagex export\fR \fISRC_WIMFILE\fR [\fISRC_IMAGE\fR]
 \fIDEST_WIMFILE\fR [\fIDEST_IMAGE_NAME\fR [\fIDEST_IMAGE_DESCRIPTION\fR]]
 [\fIOPTION\fR...]
 .SH DESCRIPTION
@@ -14,11 +14,15 @@ the exported image.
 This command is also available as simply \fBwimexport\fR if the appropriate hard
 link or batch file has been installed.
 .PP
-\fISRC_IMAGE\fR specifies the image in \fISRC_WIMFILE\fR to export.  It may be a
-1-based index of an image in \fISRC_WIMFILE\fR, the name of an image in
-\fISRC_WIMFILE\fR, or the keyword "all" to indicate that all images in
-\fISRC_WIMFILE\fR are to be exported.  Use the \fBwimlib-imagex info\fR (1)
+If specified, \fISRC_IMAGE\fR specifies the image in \fISRC_WIMFILE\fR to
+export.  It may be a 1-based index of an image in \fISRC_WIMFILE\fR, the name of
+an image in \fISRC_WIMFILE\fR, or the keyword "all" to indicate that all images
+in \fISRC_WIMFILE\fR are to be exported.  Use the \fBwimlib-imagex info\fR (1)
 command to list the images a WIM file contains.
+.PP
+If \fISRC_IMAGE\fR is not specified (which is only possible if the only
+non-option arguments are \fISRC_WIMFILE\fR and \fIDEST_WIMFILE\fR), then
+\fISRC_IMAGE\fR defaults to "all".
 .PP
 If specified, \fIDEST_IMAGE_NAME\fR is the name to give the image being exported
 to \fIDEST_WIMFILE\fR.  The default is its name in \fISRC_WIMFILE\fR.
