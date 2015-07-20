@@ -126,10 +126,10 @@
  * code.
  */
 int
-make_huffman_decode_table(u16 decode_table[const restrict],
+make_huffman_decode_table(u16 decode_table[const],
 			  const unsigned num_syms,
 			  const unsigned table_bits,
-			  const u8 lens[const restrict],
+			  const u8 lens[const],
 			  const unsigned max_codeword_len)
 {
 	const unsigned table_num_entries = 1 << table_bits;

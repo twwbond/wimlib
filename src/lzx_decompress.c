@@ -70,26 +70,31 @@
 
 #define LZX_READ_LENS_MAX_OVERRUN 50
 
+struct lzx_lens {
+	u8 main[LZX_MAINCODE_MAX_NUM_SYMBOLS + LZX_READ_LENS_MAX_OVERRUN];
+
+	u8 len[LZX_LENCODE_NUM_SYMBOLS + LZX_READ_LENS_MAX_OVERRUN];
+
+	u8 aligned[LZX_ALIGNEDCODE_NUM_SYMBOLS];
+};
+
 /* Huffman decoding tables, and arrays that map symbols to codeword lengths.  */
 struct lzx_tables {
 
 	u16 maincode_decode_table[(1 << LZX_MAINCODE_TABLEBITS) +
 					(LZX_MAINCODE_MAX_NUM_SYMBOLS * 2)]
 					_aligned_attribute(DECODE_TABLE_ALIGNMENT);
-	u8 maincode_lens[LZX_MAINCODE_MAX_NUM_SYMBOLS + LZX_READ_LENS_MAX_OVERRUN];
-
 
 	u16 lencode_decode_table[(1 << LZX_LENCODE_TABLEBITS) +
 					(LZX_LENCODE_NUM_SYMBOLS * 2)]
 					_aligned_attribute(DECODE_TABLE_ALIGNMENT);
-	u8 lencode_lens[LZX_LENCODE_NUM_SYMBOLS + LZX_READ_LENS_MAX_OVERRUN];
 
 
 	u16 alignedcode_decode_table[(1 << LZX_ALIGNEDCODE_TABLEBITS) +
 					(LZX_ALIGNEDCODE_NUM_SYMBOLS * 2)]
 					_aligned_attribute(DECODE_TABLE_ALIGNMENT);
-	u8 alignedcode_lens[LZX_ALIGNEDCODE_NUM_SYMBOLS];
 } _aligned_attribute(DECODE_TABLE_ALIGNMENT);
+
 
 /* Least-recently used queue for match offsets.  */
 struct lzx_lru_queue {
@@ -113,6 +118,8 @@ struct lzx_decompressor {
 	unsigned window_order;
 	unsigned num_main_syms;
 	struct lzx_tables tables;
+	struct lzx_lens lens[2];
+	int which_lens;
 };
 
 /* Read a Huffman-encoded symbol using the precode.  */
@@ -120,8 +127,7 @@ static inline unsigned
 read_huffsym_using_precode(struct input_bitstream *istream,
 			   const u16 precode_decode_table[])
 {
-	return read_huffsym(istream, precode_decode_table, LZX_PRECODE_TABLEBITS,
-			    LZX_MAX_PRE_CODEWORD_LEN);
+	return read_huffsym2(istream, precode_decode_table, LZX_PRECODE_TABLEBITS);
 }
 
 /* Read a Huffman-encoded symbol using the main code.  */
@@ -167,14 +173,16 @@ read_huffsym_using_alignedcode(struct input_bitstream *istream,
  * Returns 0 on success, or -1 if the data was invalid.
  */
 static int
-lzx_read_codeword_lens(struct input_bitstream *istream, u8 *lens, unsigned num_lens)
+lzx_read_codeword_lens(struct input_bitstream *istream,
+		       u8 *cur_lens, const u8 *prev_lens, unsigned num_lens)
 {
 	u16 precode_decode_table[(1 << LZX_PRECODE_TABLEBITS) +
 					(LZX_PRECODE_NUM_SYMBOLS * 2)]
 					_aligned_attribute(DECODE_TABLE_ALIGNMENT);
 	u8 precode_lens[LZX_PRECODE_NUM_SYMBOLS];
-	u8 *len_ptr = lens;
-	u8 *lens_end = lens + num_lens;
+	u8 *len_ptr = cur_lens;
+	const u8 *prev_len_ptr = prev_lens;
+	u8 *lens_end = len_ptr + num_lens;
 	int ret;
 
 	/* Read the lengths of the precode codewords.  These are given
@@ -198,15 +206,20 @@ lzx_read_codeword_lens(struct input_bitstream *istream, u8 *lens, unsigned num_l
 		unsigned presym;
 		u8 len;
 
+		bitstream_ensure_bits(istream,
+				      LZX_MAX_PRE_CODEWORD_LEN +
+				      1 + LZX_MAX_PRE_CODEWORD_LEN);
+
 		/* Read the next precode symbol.  */
 		presym = read_huffsym_using_precode(istream,
 						    precode_decode_table);
 		if (presym < 17) {
 			/* Difference from old length  */
-			len = *len_ptr - presym;
+			len = *prev_len_ptr - presym;
 			if ((s8)len < 0)
 				len += 17;
 			*len_ptr++ = len;
+			prev_len_ptr++;
 		} else {
 			/* Special RLE values  */
 
@@ -214,27 +227,45 @@ lzx_read_codeword_lens(struct input_bitstream *istream, u8 *lens, unsigned num_l
 
 			if (presym == 17) {
 				/* Run of 0's  */
-				run_len = 4 + bitstream_read_bits(istream, 4);
-				len = 0;
+				run_len = 4 + bitstream_pop_bits(istream, 4);
+
+				store_word_unaligned(0, len_ptr + 0);
+				store_word_unaligned(0, len_ptr + 8);
+				store_word_unaligned(0, len_ptr + 16);
+
 			} else if (presym == 18) {
 				/* Longer run of 0's  */
-				run_len = 20 + bitstream_read_bits(istream, 5);
-				len = 0;
+				run_len = 20 + bitstream_pop_bits(istream, 5);
+
+				store_word_unaligned(0, len_ptr + 0);
+				store_word_unaligned(0, len_ptr + 8);
+				store_word_unaligned(0, len_ptr + 16);
+				store_word_unaligned(0, len_ptr + 24);
+				store_word_unaligned(0, len_ptr + 32);
+				store_word_unaligned(0, len_ptr + 40);
+				store_word_unaligned(0, len_ptr + 48);
 			} else {
 				/* Run of identical lengths  */
-				run_len = 4 + bitstream_read_bits(istream, 1);
+				run_len = 4 + bitstream_pop_bits(istream, 1);
 				presym = read_huffsym_using_precode(istream,
 								    precode_decode_table);
 				if (unlikely(presym > 17))
 					return -1;
-				len = *len_ptr - presym;
+				len = *prev_len_ptr - presym;
 				if ((s8)len < 0)
 					len += 17;
+
+				len_ptr[0] = len;
+				len_ptr[1] = len;
+				len_ptr[2] = len;
+				len_ptr[3] = len;
+				len_ptr[4] = len;
 			}
 
-			do {
-				*len_ptr++ = len;
-			} while (--run_len);
+			len_ptr += run_len;
+			prev_len_ptr += run_len;
+
+
 			/* Worst case overrun is when presym == 18,
 			 * run_len == 20 + 31, and only 1 length was remaining.
 			 * So LZX_READ_LENS_MAX_OVERRUN == 50.
@@ -267,6 +298,8 @@ lzx_read_block_header(struct input_bitstream *istream,
 		      unsigned window_order,
 		      int *block_type_ret,
 		      u32 *block_size_ret,
+		      struct lzx_lens *cur_lens,
+		      const struct lzx_lens *prev_lens,
 		      struct lzx_tables *tables,
 		      struct lzx_lru_queue *queue)
 {
@@ -310,7 +343,7 @@ lzx_read_block_header(struct input_bitstream *istream,
 		 */
 
 		for (int i = 0; i < LZX_ALIGNEDCODE_NUM_SYMBOLS; i++) {
-			tables->alignedcode_lens[i] =
+			cur_lens->aligned[i] =
 				bitstream_read_bits(istream,
 						    LZX_ALIGNEDCODE_ELEMENT_SIZE);
 		}
@@ -318,7 +351,7 @@ lzx_read_block_header(struct input_bitstream *istream,
 		ret = make_huffman_decode_table(tables->alignedcode_decode_table,
 						LZX_ALIGNEDCODE_NUM_SYMBOLS,
 						LZX_ALIGNEDCODE_TABLEBITS,
-						tables->alignedcode_lens,
+						cur_lens->aligned,
 						LZX_MAX_ALIGNED_CODEWORD_LEN);
 		if (ret)
 			return ret;
@@ -334,13 +367,16 @@ lzx_read_block_header(struct input_bitstream *istream,
 		 * in two parts: one part for literal symbols, and one part for
 		 * match symbols.  */
 
-		ret = lzx_read_codeword_lens(istream, tables->maincode_lens,
+		ret = lzx_read_codeword_lens(istream,
+					     cur_lens->main,
+					     prev_lens->main,
 					     LZX_NUM_CHARS);
 		if (ret)
 			return ret;
 
 		ret = lzx_read_codeword_lens(istream,
-					     tables->maincode_lens + LZX_NUM_CHARS,
+					     cur_lens->main + LZX_NUM_CHARS,
+					     prev_lens->main + LZX_NUM_CHARS,
 					     num_main_syms - LZX_NUM_CHARS);
 		if (ret)
 			return ret;
@@ -348,14 +384,16 @@ lzx_read_block_header(struct input_bitstream *istream,
 		ret = make_huffman_decode_table(tables->maincode_decode_table,
 						num_main_syms,
 						LZX_MAINCODE_TABLEBITS,
-						tables->maincode_lens,
+						cur_lens->main,
 						LZX_MAX_MAIN_CODEWORD_LEN);
 		if (ret)
 			return ret;
 
 		/* Read the length code and prepare its decode table.  */
 
-		ret = lzx_read_codeword_lens(istream, tables->lencode_lens,
+		ret = lzx_read_codeword_lens(istream,
+					     cur_lens->len,
+					     prev_lens->len,
 					     LZX_LENCODE_NUM_SYMBOLS);
 		if (ret)
 			return ret;
@@ -363,7 +401,7 @@ lzx_read_block_header(struct input_bitstream *istream,
 		ret = make_huffman_decode_table(tables->lencode_decode_table,
 						LZX_LENCODE_NUM_SYMBOLS,
 						LZX_LENCODE_TABLEBITS,
-						tables->lencode_lens,
+						cur_lens->len,
 						LZX_MAX_LEN_CODEWORD_LEN);
 		if (ret)
 			return ret;
@@ -399,38 +437,12 @@ lzx_read_block_header(struct input_bitstream *istream,
 	return 0;
 }
 
-/*
- * Decompress an LZX-compressed block of data.
- *
- * @block_type:
- *	The type of the block (LZX_BLOCKTYPE_VERBATIM or LZX_BLOCKTYPE_ALIGNED).
- *
- * @block_size:
- *	The size of the block, in bytes.
- *
- * @window:
- *	Pointer to the beginning of the decompression window.
- *
- * @window_pos:
- *	The position in the window at which the block starts.
- *
- * @tables:
- *	The Huffman decoding tables for the block.
- *
- * @queue:
- *	The least-recently-used queue for match offsets.
- *
- * @istream:
- *	The input bitstream, positioned at the start of the block data.
- *
- * Returns 0 on success, or -1 if the data was invalid.
- */
-static int
-lzx_decompress_block(int block_type, u32 block_size,
-		     u8 *window, u32 window_pos,
-		     const struct lzx_tables *tables,
-		     struct lzx_lru_queue *queue,
-		     struct input_bitstream *istream)
+static inline int
+lzx_decompress_block_impl(u32 block_size, u8 *window, u32 window_pos,
+			  const struct lzx_tables *tables,
+			  struct lzx_lru_queue *queue,
+			  struct input_bitstream *istream,
+			  bool aligned)
 {
 	u8 *window_ptr = &window[window_pos];
 	u8 *window_end = window_ptr + block_size;
@@ -439,12 +451,16 @@ lzx_decompress_block(int block_type, u32 block_size,
 	unsigned offset_slot;
 	u32 match_offset;
 	unsigned num_extra_bits;
-	unsigned ones_if_aligned = 0U - (block_type == LZX_BLOCKTYPE_ALIGNED);
 
 	while (window_ptr != window_end) {
 
-		bitstream_ensure_bits(istream, LZX_MAX_MAIN_CODEWORD_LEN +
-				      LZX_MAX_LEN_CODEWORD_LEN);
+		if (!aligned && BITBUF_NBITS == 64) {
+			bitstream_ensure_bits(istream, LZX_MAX_MAIN_CODEWORD_LEN +
+					      LZX_MAX_LEN_CODEWORD_LEN + 17);
+		} else {
+			bitstream_ensure_bits(istream, LZX_MAX_MAIN_CODEWORD_LEN +
+					      LZX_MAX_LEN_CODEWORD_LEN);
+		}
 
 		mainsym = read_huffsym_using_maincode(istream, tables);
 		if (mainsym < LZX_NUM_CHARS) {
@@ -489,9 +505,14 @@ lzx_decompress_block(int block_type, u32 block_size,
 			 * each offset are encoded using the aligned offset
 			 * code.  Otherwise, all the extra bits are literal.  */
 
-			bitstream_ensure_bits(istream, 14 + LZX_MAX_ALIGNED_CODEWORD_LEN);
+			if (aligned) {
+				bitstream_ensure_bits(istream, 14 + LZX_MAX_ALIGNED_CODEWORD_LEN);
+			} else {
+				if (BITBUF_NBITS != 64)
+					bitstream_ensure_bits(istream, 17);
+			}
 
-			if ((num_extra_bits & ones_if_aligned) >= LZX_NUM_ALIGNED_OFFSET_BITS) {
+			if (aligned && num_extra_bits >= LZX_NUM_ALIGNED_OFFSET_BITS) {
 				match_offset +=
 					bitstream_pop_bits(istream,
 							    num_extra_bits -
@@ -525,7 +546,55 @@ lzx_decompress_block(int block_type, u32 block_size,
 
 		window_ptr += match_len;
 	}
+
 	return 0;
+}
+
+/*
+ * Decompress an LZX-compressed block of data.
+ *
+ * @block_type:
+ *	The type of the block (LZX_BLOCKTYPE_VERBATIM or LZX_BLOCKTYPE_ALIGNED).
+ *
+ * @block_size:
+ *	The size of the block, in bytes.
+ *
+ * @window:
+ *	Pointer to the beginning of the decompression window.
+ *
+ * @window_pos:
+ *	The position in the window at which the block starts.
+ *
+ * @tables:
+ *	The Huffman decoding tables for the block.
+ *
+ * @queue:
+ *	The least-recently-used queue for match offsets.
+ *
+ * @istream:
+ *	The input bitstream, positioned at the start of the block data.
+ *
+ * Returns 0 on success, or -1 if the data was invalid.
+ */
+static noinline int
+lzx_decompress_block(int block_type, u32 block_size,
+		     u8 *window, u32 window_pos,
+		     const struct lzx_tables *tables,
+		     struct lzx_lru_queue *queue,
+		     struct input_bitstream *istream)
+{
+	struct input_bitstream is = *istream;
+	int ret;
+
+	if (block_type == LZX_BLOCKTYPE_ALIGNED)
+		ret = lzx_decompress_block_impl(block_size, window, window_pos,
+						 tables, queue, &is, true);
+	else
+		ret = lzx_decompress_block_impl(block_size, window, window_pos,
+						tables, queue, &is, false);
+
+	*istream = is;
+	return ret;
 }
 
 static int
@@ -548,8 +617,8 @@ lzx_decompress(const void *compressed_data, size_t compressed_size,
 	lzx_lru_queue_init(&queue);
 
 	/* Codeword lengths begin as all 0's for delta encoding purposes.  */
-	memset(dec->tables.maincode_lens, 0, dec->num_main_syms);
-	memset(dec->tables.lencode_lens, 0, LZX_LENCODE_NUM_SYMBOLS);
+	memset(&dec->lens[1], 0, sizeof(dec->lens));
+	dec->which_lens = 0;
 
 	/* Set this to true if there may be 0xe8 bytes in the uncompressed data.
 	 */
@@ -566,7 +635,10 @@ lzx_decompress(const void *compressed_data, size_t compressed_size,
 	{
 		ret = lzx_read_block_header(&istream, dec->num_main_syms,
 					    dec->window_order, &block_type,
-					    &block_size, &dec->tables, &queue);
+					    &block_size,
+					    &dec->lens[dec->which_lens],
+					    &dec->lens[dec->which_lens ^ 1],
+					    &dec->tables, &queue);
 		if (ret)
 			return ret;
 
@@ -589,8 +661,10 @@ lzx_decompress(const void *compressed_data, size_t compressed_size,
 
 			/* If the first 0xe8 byte was in this block, it must
 			 * have been encoded as a literal using mainsym 0xe8. */
-			if (dec->tables.maincode_lens[0xe8] != 0)
+			if (dec->lens[dec->which_lens].main[0xe8] != 0)
 				may_have_e8_byte = true;
+
+			dec->which_lens ^= 1;
 		} else {
 
 			/* Uncompressed block.  */
