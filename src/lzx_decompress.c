@@ -129,7 +129,6 @@ static inline unsigned
 read_huffsym_using_maincode(struct input_bitstream *istream,
 			    const struct lzx_tables *tables)
 {
-	bitstream_ensure_bits(istream, 16);
 	return read_huffsym2(istream, tables->maincode_decode_table, LZX_MAINCODE_TABLEBITS);
 }
 
@@ -138,7 +137,6 @@ static inline unsigned
 read_huffsym_using_lencode(struct input_bitstream *istream,
 			   const struct lzx_tables *tables)
 {
-	bitstream_ensure_bits(istream, 16);
 	return read_huffsym2(istream, tables->lencode_decode_table, LZX_LENCODE_TABLEBITS);
 }
 
@@ -147,7 +145,6 @@ static inline unsigned
 read_huffsym_using_alignedcode(struct input_bitstream *istream,
 			       const struct lzx_tables *tables)
 {
-	bitstream_ensure_bits(istream, 16);
 	return read_huffsym2(istream, tables->alignedcode_decode_table, LZX_ALIGNEDCODE_TABLEBITS);
 }
 
@@ -447,8 +444,7 @@ lzx_decompress_block(int block_type, u32 block_size,
 	while (window_ptr != window_end) {
 
 		bitstream_ensure_bits(istream, LZX_MAX_MAIN_CODEWORD_LEN +
-				      LZX_MAX_LEN_CODEWORD_LEN +
-				      14 + LZX_MAX_ALIGNED_CODEWORD_LEN);
+				      LZX_MAX_LEN_CODEWORD_LEN);
 
 		mainsym = read_huffsym_using_maincode(istream, tables);
 		if (mainsym < LZX_NUM_CHARS) {
