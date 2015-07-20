@@ -116,39 +116,39 @@ struct lzx_decompressor {
 };
 
 /* Read a Huffman-encoded symbol using the precode.  */
-static inline u16
+static inline unsigned
 read_huffsym_using_precode(struct input_bitstream *istream,
 			   const u16 precode_decode_table[])
 {
-	return read_huffsym(istream, precode_decode_table,
-			    LZX_PRECODE_TABLEBITS, LZX_MAX_PRE_CODEWORD_LEN);
+	return read_huffsym(istream, precode_decode_table, LZX_PRECODE_TABLEBITS,
+			    LZX_MAX_PRE_CODEWORD_LEN);
 }
 
 /* Read a Huffman-encoded symbol using the main code.  */
-static inline u16
+static inline unsigned
 read_huffsym_using_maincode(struct input_bitstream *istream,
 			    const struct lzx_tables *tables)
 {
-	return read_huffsym(istream, tables->maincode_decode_table,
-			    LZX_MAINCODE_TABLEBITS, LZX_MAX_MAIN_CODEWORD_LEN);
+	bitstream_ensure_bits(istream, 16);
+	return read_huffsym2(istream, tables->maincode_decode_table, LZX_MAINCODE_TABLEBITS);
 }
 
 /* Read a Huffman-encoded symbol using the length code.  */
-static inline u16
+static inline unsigned
 read_huffsym_using_lencode(struct input_bitstream *istream,
 			   const struct lzx_tables *tables)
 {
-	return read_huffsym(istream, tables->lencode_decode_table,
-			    LZX_LENCODE_TABLEBITS, LZX_MAX_LEN_CODEWORD_LEN);
+	bitstream_ensure_bits(istream, 16);
+	return read_huffsym2(istream, tables->lencode_decode_table, LZX_LENCODE_TABLEBITS);
 }
 
 /* Read a Huffman-encoded symbol using the aligned offset code.  */
-static inline u16
+static inline unsigned
 read_huffsym_using_alignedcode(struct input_bitstream *istream,
 			       const struct lzx_tables *tables)
 {
-	return read_huffsym(istream, tables->alignedcode_decode_table,
-			    LZX_ALIGNEDCODE_TABLEBITS, LZX_MAX_ALIGNED_CODEWORD_LEN);
+	bitstream_ensure_bits(istream, 16);
+	return read_huffsym2(istream, tables->alignedcode_decode_table, LZX_ALIGNEDCODE_TABLEBITS);
 }
 
 /*
@@ -446,6 +446,10 @@ lzx_decompress_block(int block_type, u32 block_size,
 
 	while (window_ptr != window_end) {
 
+		bitstream_ensure_bits(istream, LZX_MAX_MAIN_CODEWORD_LEN +
+				      LZX_MAX_LEN_CODEWORD_LEN +
+				      14 + LZX_MAX_ALIGNED_CODEWORD_LEN);
+
 		mainsym = read_huffsym_using_maincode(istream, tables);
 		if (mainsym < LZX_NUM_CHARS) {
 			/* Literal  */
@@ -489,15 +493,17 @@ lzx_decompress_block(int block_type, u32 block_size,
 			 * each offset are encoded using the aligned offset
 			 * code.  Otherwise, all the extra bits are literal.  */
 
+			bitstream_ensure_bits(istream, 14 + LZX_MAX_ALIGNED_CODEWORD_LEN);
+
 			if ((num_extra_bits & ones_if_aligned) >= LZX_NUM_ALIGNED_OFFSET_BITS) {
 				match_offset +=
-					bitstream_read_bits(istream,
+					bitstream_pop_bits(istream,
 							    num_extra_bits -
 								LZX_NUM_ALIGNED_OFFSET_BITS)
 							<< LZX_NUM_ALIGNED_OFFSET_BITS;
 				match_offset += read_huffsym_using_alignedcode(istream, tables);
 			} else {
-				match_offset += bitstream_read_bits(istream, num_extra_bits);
+				match_offset += bitstream_pop_bits(istream, num_extra_bits);
 			}
 
 			/* Adjust the offset.  */

@@ -21,8 +21,8 @@
 struct input_bitstream {
 
 	/* Bits that have been read from the input buffer.  The bits are
-	 * left-justified; the next bit is always bit 31.  */
-	u32 bitbuf;
+	 * left-justified; the next bit is always the highest bit.  */
+	machine_word_t bitbuf;
 
 	/* Number of bits currently held in @bitbuf.  */
 	u32 bitsleft;
@@ -33,6 +33,8 @@ struct input_bitstream {
 	/* Pointer past the end of the input buffer.  */
 	const u8 *end;
 };
+
+#define BITBUF_NBITS	(8 * sizeof(machine_word_t))
 
 /* Initialize a bitstream to read from the specified input buffer.  */
 static inline void
@@ -62,37 +64,40 @@ bitstream_ensure_bits(struct input_bitstream *is, const unsigned num_bits)
 	if (is->bitsleft >= num_bits)
 		return;
 
-	if (unlikely(is->end - is->next < 2))
-		goto overflow;
-
-	is->bitbuf |= (u32)get_unaligned_u16_le(is->next) << (16 - is->bitsleft);
-	is->next += 2;
+	if (likely(is->end - is->next >= 2)) {
+		is->bitbuf |= (machine_word_t)get_unaligned_u16_le(is->next) << (BITBUF_NBITS - 16 - is->bitsleft);
+		is->next += 2;
+	}
 	is->bitsleft += 16;
 
-	if (unlikely(num_bits == 17 && is->bitsleft == 16)) {
-		if (unlikely(is->end - is->next < 2))
-			goto overflow;
+	if (is->bitsleft >= BITBUF_NBITS - 16)
+		return;
 
-		is->bitbuf |= (u32)get_unaligned_u16_le(is->next);
+	if (likely(is->end - is->next >= 2)) {
+		is->bitbuf |= (machine_word_t)get_unaligned_u16_le(is->next) << (BITBUF_NBITS - 16 - is->bitsleft);
 		is->next += 2;
-		is->bitsleft = 32;
 	}
+	is->bitsleft += 16;
 
-	return;
+	if (BITBUF_NBITS == 64) {
+		if (is->bitsleft >= BITBUF_NBITS - 16)
+			return;
 
-overflow:
-	is->bitsleft = 32;
+		if (likely(is->end - is->next >= 2)) {
+			is->bitbuf |= (machine_word_t)get_unaligned_u16_le(is->next) << (BITBUF_NBITS - 16 - is->bitsleft);
+			is->next += 2;
+		}
+		is->bitsleft += 16;
+	}
 }
 
 /* Return the next @num_bits bits from the bitstream, without removing them.
  * There must be at least @num_bits remaining in the buffer variable, from a
  * previous call to bitstream_ensure_bits().  */
-static inline u32
+static inline machine_word_t
 bitstream_peek_bits(const struct input_bitstream *is, const unsigned num_bits)
 {
-	if (unlikely(num_bits == 0))
-		return 0;
-	return is->bitbuf >> (32 - num_bits);
+	return (is->bitbuf >> 1) >> (BITBUF_NBITS - num_bits - 1);
 }
 
 /* Remove @num_bits from the bitstream.  There must be at least @num_bits
@@ -108,16 +113,16 @@ bitstream_remove_bits(struct input_bitstream *is, unsigned num_bits)
 /* Remove and return @num_bits bits from the bitstream.  There must be at least
  * @num_bits remaining in the buffer variable, from a previous call to
  * bitstream_ensure_bits().  */
-static inline u32
+static inline machine_word_t
 bitstream_pop_bits(struct input_bitstream *is, unsigned num_bits)
 {
-	u32 bits = bitstream_peek_bits(is, num_bits);
+	machine_word_t bits = bitstream_peek_bits(is, num_bits);
 	bitstream_remove_bits(is, num_bits);
 	return bits;
 }
 
 /* Read and return the next @num_bits bits from the bitstream.  */
-static inline u32
+static inline machine_word_t
 bitstream_read_bits(struct input_bitstream *is, unsigned num_bits)
 {
 	bitstream_ensure_bits(is, num_bits);
@@ -208,20 +213,12 @@ bitstream_align(struct input_bitstream *is)
  * meaning.  */
 #define DECODE_TABLE_MAX_CODEWORD_LEN 23
 
-/* Reads and returns the next Huffman-encoded symbol from a bitstream.  If the
- * input data is exhausted, the Huffman symbol is decoded as if the missing bits
- * are all zeroes.
- *
- * XXX: This is mostly duplicated in lzms_decode_huffman_symbol() in
- * lzms_decompress.c.  */
-static inline u16
-read_huffsym(struct input_bitstream *istream, const u16 decode_table[],
-	     unsigned table_bits, unsigned max_codeword_len)
+static inline unsigned
+read_huffsym2(struct input_bitstream *istream, const u16 decode_table[],
+	      unsigned table_bits)
 {
 	unsigned entry;
 	unsigned key_bits;
-
-	bitstream_ensure_bits(istream, max_codeword_len);
 
 	/* Index the decode table by the next table_bits bits of the input.  */
 	key_bits = bitstream_peek_bits(istream, table_bits);
@@ -244,6 +241,21 @@ read_huffsym(struct input_bitstream *istream, const u16 decode_table[],
 		} while ((entry = decode_table[key_bits]) >= 0xC000);
 		return entry;
 	}
+}
+
+/* Reads and returns the next Huffman-encoded symbol from a bitstream.  If the
+ * input data is exhausted, the Huffman symbol is decoded as if the missing bits
+ * are all zeroes.
+ *
+ * XXX: This is mostly duplicated in lzms_decode_huffman_symbol() in
+ * lzms_decompress.c.  */
+static inline unsigned
+read_huffsym(struct input_bitstream *istream, const u16 decode_table[],
+	     unsigned table_bits, unsigned max_codeword_len)
+{
+	bitstream_ensure_bits(istream, max_codeword_len);
+
+	return read_huffsym2(istream, decode_table, table_bits);
 }
 
 extern int
