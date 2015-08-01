@@ -384,14 +384,18 @@ find_next_opcode(u8 *p)
 	};
 
 	for (;;) {
-		if (is_potential_opcode[*++p])
+		if (is_potential_opcode[*p])
 			break;
-		if (is_potential_opcode[*++p])
+		p++;
+		if (is_potential_opcode[*p])
 			break;
-		if (is_potential_opcode[*++p])
+		p++;
+		if (is_potential_opcode[*p])
 			break;
-		if (is_potential_opcode[*++p])
+		p++;
+		if (is_potential_opcode[*p])
 			break;
+		p++;
 	}
 	return p;
 }
@@ -461,7 +465,7 @@ translate_if_needed(u8 *data, u8 *p, s32 *last_x86_pos,
 		break;
 	}
 
-	return p;
+	return p + 1;
 
 have_opcode:
 	i = p - data;
@@ -482,14 +486,13 @@ have_opcode:
 	}
 
 	i += opcode_nbytes + sizeof(le32) - 1;
-	p += opcode_nbytes + sizeof(le32) - 1;
 
 	if (i - last_target_usages[target16] <= LZMS_X86_ID_WINDOW_SIZE)
 		*last_x86_pos = i;
 
 	last_target_usages[target16] = i;
 
-	return p;
+	return p + opcode_nbytes + sizeof(le32);
 }
 
 /*
@@ -565,7 +568,7 @@ lzms_x86_filter(u8 data[restrict], s32 size,
 	last_x86_pos = -LZMS_X86_MAX_TRANSLATION_OFFSET - 1;
 
 	/* Note: the very first byte must be ignored completely!  */
-	p = data;
+	p = data + 1;
 	for (;;) {
 		p = find_next_opcode(p);
 
