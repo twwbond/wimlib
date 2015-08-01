@@ -89,6 +89,7 @@ libwim_la_SOURCES =		\
 	src/wim.c		\
 	src/write.c		\
 	src/xml.c		\
+	src/x86_cpu_features.c	\
 	src/xpress_compress.c	\
 	src/xpress_decompress.c \
 	include/wimlib/alloca.h		\
@@ -151,6 +152,7 @@ libwim_la_SOURCES =		\
 	include/wimlib/wim.h		\
 	include/wimlib/write.h		\
 	include/wimlib/xml.h		\
+	include/wimlib/x86_cpu_features.h	\
 	include/wimlib/xpress_constants.h
 
 if WITH_NTFS_3G
