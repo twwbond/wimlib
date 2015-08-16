@@ -2166,8 +2166,9 @@ oom0:
 }
 
 static size_t
-lzms_compress(const void *in, size_t in_nbytes,
-	      void *out, size_t out_nbytes_avail, void *_c)
+lzms_compress(const void * const restrict in, const size_t in_nbytes,
+	      void * const restrict out, const size_t out_nbytes_avail,
+	      void * const restrict _c)
 {
 	struct lzms_compressor *c = _c;
 	size_t result;
