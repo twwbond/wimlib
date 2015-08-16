@@ -335,27 +335,27 @@ struct lzms_compressor {
 	struct lzms_huffman_rebuild_info literal_rebuild_info;
 	u32 literal_codewords[LZMS_NUM_LITERAL_SYMS];
 	u8 literal_lens[LZMS_NUM_LITERAL_SYMS];
-	u32 literal_freqs[LZMS_NUM_LITERAL_SYMS];
+	u32 literal_freqs[LZMS_NUM_LITERAL_SYMS] LZMS_FREQS_ALIGNED;
 
 	struct lzms_huffman_rebuild_info lz_offset_rebuild_info;
 	u32 lz_offset_codewords[LZMS_MAX_NUM_OFFSET_SYMS];
 	u8 lz_offset_lens[LZMS_MAX_NUM_OFFSET_SYMS];
-	u32 lz_offset_freqs[LZMS_MAX_NUM_OFFSET_SYMS];
+	u32 lz_offset_freqs[LZMS_MAX_NUM_OFFSET_SYMS] LZMS_FREQS_ALIGNED;
 
 	struct lzms_huffman_rebuild_info length_rebuild_info;
 	u32 length_codewords[LZMS_NUM_LENGTH_SYMS];
 	u8 length_lens[LZMS_NUM_LENGTH_SYMS];
-	u32 length_freqs[LZMS_NUM_LENGTH_SYMS];
+	u32 length_freqs[LZMS_NUM_LENGTH_SYMS] LZMS_FREQS_ALIGNED;
 
 	struct lzms_huffman_rebuild_info delta_offset_rebuild_info;
 	u32 delta_offset_codewords[LZMS_MAX_NUM_OFFSET_SYMS];
 	u8 delta_offset_lens[LZMS_MAX_NUM_OFFSET_SYMS];
-	u32 delta_offset_freqs[LZMS_MAX_NUM_OFFSET_SYMS];
+	u32 delta_offset_freqs[LZMS_MAX_NUM_OFFSET_SYMS] LZMS_FREQS_ALIGNED;
 
 	struct lzms_huffman_rebuild_info delta_power_rebuild_info;
 	u32 delta_power_codewords[LZMS_NUM_DELTA_POWER_SYMS];
 	u8 delta_power_lens[LZMS_NUM_DELTA_POWER_SYMS];
-	u32 delta_power_freqs[LZMS_NUM_DELTA_POWER_SYMS];
+	u32 delta_power_freqs[LZMS_NUM_DELTA_POWER_SYMS] LZMS_FREQS_ALIGNED;
 
 	}; /* struct */
 

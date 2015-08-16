@@ -27,8 +27,12 @@
 #include "wimlib/unaligned.h"
 #include "wimlib/x86_cpu_features.h"
 
-#ifdef __x86_64__
+#if defined(__x86_64__) || defined(__SSE2__)
 #  include <emmintrin.h>
+#endif
+
+#ifdef __AVX2__
+#  include <immintrin.h>
 #endif
 
 /* Table: offset slot => offset slot base value  */
@@ -373,8 +377,50 @@ lzms_init_symbol_frequencies(u32 freqs[], unsigned num_syms)
 void
 lzms_dilute_symbol_frequencies(u32 freqs[], unsigned num_syms)
 {
+#if 0
+	const __m256i ones = _mm256_set1_epi32(1);
+	__m256i *p = (__m256i *)freqs;
+	unsigned count = num_syms / 16;
+	while (count--) {
+		__m256i v1 = *(p + 0);
+		__m256i v2 = *(p + 1);
+
+		v1 = _mm256_add_epi32(_mm256_srli_epi32(v1, 1), ones);
+		v2 = _mm256_add_epi32(_mm256_srli_epi32(v2, 1), ones);
+
+		*(p + 0) = v1;
+		*(p + 1) = v2;
+		p += 2;
+	}
+	for (unsigned sym = num_syms & ~15; sym < num_syms; sym++)
+		freqs[sym] = (freqs[sym] >> 1) + 1;
+#elif 1
+	const __m128i ones = _mm_set1_epi32(1);
+	__m128i *p = (__m128i *)freqs;
+	unsigned count = num_syms / 16;
+	while (count--) {
+		__m128i v1 = *(p + 0);
+		__m128i v2 = *(p + 1);
+		__m128i v3 = *(p + 2);
+		__m128i v4 = *(p + 3);
+
+		v1 = _mm_add_epi32(_mm_srli_epi32(v1, 1), ones);
+		v2 = _mm_add_epi32(_mm_srli_epi32(v2, 1), ones);
+		v3 = _mm_add_epi32(_mm_srli_epi32(v3, 1), ones);
+		v4 = _mm_add_epi32(_mm_srli_epi32(v4, 1), ones);
+
+		*(p + 0) = v1;
+		*(p + 1) = v2;
+		*(p + 2) = v3;
+		*(p + 3) = v4;
+		p += 4;
+	}
+	for (unsigned sym = num_syms & ~15; sym < num_syms; sym++)
+		freqs[sym] = (freqs[sym] >> 1) + 1;
+#else
 	for (unsigned sym = 0; sym < num_syms; sym++)
 		freqs[sym] = (freqs[sym] >> 1) + 1;
+#endif
 }
 
 

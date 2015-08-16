@@ -326,31 +326,31 @@ struct lzms_decompressor {
 	u16 literal_decode_table[(1 << LZMS_LITERAL_TABLEBITS) +
 				 (2 * LZMS_NUM_LITERAL_SYMS)]
 		_aligned_attribute(DECODE_TABLE_ALIGNMENT);
-	u32 literal_freqs[LZMS_NUM_LITERAL_SYMS];
+	u32 literal_freqs[LZMS_NUM_LITERAL_SYMS] LZMS_FREQS_ALIGNED;
 	struct lzms_huffman_rebuild_info literal_rebuild_info;
 
 	u16 lz_offset_decode_table[(1 << LZMS_LZ_OFFSET_TABLEBITS) +
 				   ( 2 * LZMS_MAX_NUM_OFFSET_SYMS)]
 		_aligned_attribute(DECODE_TABLE_ALIGNMENT);
-	u32 lz_offset_freqs[LZMS_MAX_NUM_OFFSET_SYMS];
+	u32 lz_offset_freqs[LZMS_MAX_NUM_OFFSET_SYMS] LZMS_FREQS_ALIGNED;
 	struct lzms_huffman_rebuild_info lz_offset_rebuild_info;
 
 	u16 length_decode_table[(1 << LZMS_LENGTH_TABLEBITS) +
 				(2 * LZMS_NUM_LENGTH_SYMS)]
 		_aligned_attribute(DECODE_TABLE_ALIGNMENT);
-	u32 length_freqs[LZMS_NUM_LENGTH_SYMS];
+	u32 length_freqs[LZMS_NUM_LENGTH_SYMS] LZMS_FREQS_ALIGNED;
 	struct lzms_huffman_rebuild_info length_rebuild_info;
 
 	u16 delta_offset_decode_table[(1 << LZMS_DELTA_OFFSET_TABLEBITS) +
 				      (2 * LZMS_MAX_NUM_OFFSET_SYMS)]
 		_aligned_attribute(DECODE_TABLE_ALIGNMENT);
-	u32 delta_offset_freqs[LZMS_MAX_NUM_OFFSET_SYMS];
+	u32 delta_offset_freqs[LZMS_MAX_NUM_OFFSET_SYMS] LZMS_FREQS_ALIGNED;
 	struct lzms_huffman_rebuild_info delta_offset_rebuild_info;
 
 	u16 delta_power_decode_table[(1 << LZMS_DELTA_POWER_TABLEBITS) +
 				     (2 * LZMS_NUM_DELTA_POWER_SYMS)]
 		_aligned_attribute(DECODE_TABLE_ALIGNMENT);
-	u32 delta_power_freqs[LZMS_NUM_DELTA_POWER_SYMS];
+	u32 delta_power_freqs[LZMS_NUM_DELTA_POWER_SYMS] LZMS_FREQS_ALIGNED;
 	struct lzms_huffman_rebuild_info delta_power_rebuild_info;
 
 	u32 codewords[LZMS_MAX_NUM_SYMS];
@@ -579,6 +579,7 @@ lzms_init_huffman_codes(struct lzms_decompressor *d, unsigned num_offset_slots)
 			       d->delta_power_decode_table,
 			       LZMS_DELTA_POWER_TABLEBITS);
 }
+
 
 static noinline void
 lzms_rebuild_huffman_code(struct lzms_huffman_rebuild_info *rebuild_info)
