@@ -439,11 +439,8 @@ static inline u8 *
 translate_if_needed(u8 *data, u8 *p, s32 *last_x86_pos,
 		    s32 last_target_usages[], bool undo)
 {
-	s32 max_trans_offset;
-	s32 opcode_nbytes;
 	u16 target16;
 	s32 i;
-
 	/*
 	 * p[0] has one of the following values:
 	 *	0xE8 0xE9 0x48 0x4C 0xF0 0xFF
@@ -462,89 +459,100 @@ translate_if_needed(u8 *data, u8 *p, s32 *last_x86_pos,
 	static const struct byte_info {
 		u16 mask;
 		u16 desired;
-		u16 skip_length;
-		u16 prefix_length;
+		u16 max_trans_offset;
+		u8 skip_length;
+		u8 prefix_length;
 	} byte_infos[] = {
 		[0x48] = {
 			.mask		= 0x07F9,
 			.desired	= 0x0589,
 			.skip_length	= 1,
 			.prefix_length	= 3,
+			.max_trans_offset = LZMS_X86_MAX_TRANSLATION_OFFSET,
 		},
 		[0x4C] = {
 			.mask		= 0x07FF,
 			.desired	= 0x058D,
 			.skip_length	= 1,
 			.prefix_length	= 3,
+			.max_trans_offset = LZMS_X86_MAX_TRANSLATION_OFFSET,
 		},
 		[0xE8] = {	/* No restrictions	*/
 			.mask		= 0x0000,
 			.desired	= 0x0000,
 			.skip_length	= 1,
 			.prefix_length	= 1,
+			.max_trans_offset = LZMS_X86_MAX_TRANSLATION_OFFSET / 2,
 		},
 		[0xE9] = {	/* Never matches	*/
 			.mask		= 0x0000,
 			.desired	= 0xFFFF,
 			.skip_length	= 5,
 			.prefix_length	= 1,
+			.max_trans_offset = LZMS_X86_MAX_TRANSLATION_OFFSET,
 		},
 		[0xF0] = {	/* Lock add relative	*/
 			.mask		= 0xFFFF,
 			.desired	= 0x0583,
 			.skip_length	= 1,
 			.prefix_length	= 3,
+			.max_trans_offset = LZMS_X86_MAX_TRANSLATION_OFFSET,
 		},
 		[0xFF] = {	/* Call indirect relative	*/
 			.mask		= 0x00FF,
 			.desired	= 0x0015,
 			.skip_length	= 1,
 			.prefix_length	= 2,
+			.max_trans_offset = LZMS_X86_MAX_TRANSLATION_OFFSET,
 		},
 	};
 
-	u16 v = get_unaligned_u16_le(&p[1]);
 	const struct byte_info *info = &byte_infos[p[0]];
+	u16 v = get_unaligned_u16_le(&p[1]);
 
-	if ((v & info->mask) != info->desired)
-		return p + info->skip_length;
+	/*static u64 skip1_count;*/
+	/*static u64 skip2_count;*/
+	/*static u64 trans_count;*/
 
-	if (p[0] == 0x48) {
-		if (!(p[1] == 0x8D || (p[1] == 0x8B &&
-				       (p[2] == 0x05 || p[2] == 0x0D))))
-		    return p + info->skip_length;
+	if ((v & info->mask) != info->desired ||
+	    (p[0] == 0x48 &&
+		(p[1] != 0x8D && !(p[1] == 0x8B && !(p[2] & 0xF0)))))
+	{
+		/*skip1_count++;*/
+		p += info->skip_length;
+		goto out;
 	}
-	if (p[0] == 0xE8)
-		max_trans_offset = LZMS_X86_MAX_TRANSLATION_OFFSET / 2;
-	else
-		max_trans_offset = LZMS_X86_MAX_TRANSLATION_OFFSET;
 
-	opcode_nbytes = info->prefix_length;
+	/*if (trans_count++ % 100000 == 0)*/
+		/*printf("%lu %lu %lu\n", skip1_count, skip2_count, trans_count);*/
+
 
 	i = p - data;
-	p += opcode_nbytes;
+	p += info->prefix_length;
 	if (undo) {
-		if (i - *last_x86_pos <= max_trans_offset) {
+		if (i - *last_x86_pos <= info->max_trans_offset) {
 			u32 n = get_unaligned_u32_le(p);
 			put_unaligned_u32_le(n - i, p);
 		}
 		target16 = i + get_unaligned_u16_le(p);
 	} else {
 		target16 = i + get_unaligned_u16_le(p);
-		if (i - *last_x86_pos <= max_trans_offset) {
+		if (i - *last_x86_pos <= info->max_trans_offset) {
 			u32 n = get_unaligned_u32_le(p);
 			put_unaligned_u32_le(n + i, p);
 		}
 	}
 
-	i += opcode_nbytes + sizeof(le32) - 1;
+	i += info->prefix_length + sizeof(le32) - 1;
 
 	if (i - last_target_usages[target16] <= LZMS_X86_ID_WINDOW_SIZE)
 		*last_x86_pos = i;
 
 	last_target_usages[target16] = i;
 
-	return p + sizeof(le32);
+	p += sizeof(le32);
+out:
+	return p;
 }
 
 /*
