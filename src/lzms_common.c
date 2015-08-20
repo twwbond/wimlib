@@ -29,7 +29,6 @@
 #include "wimlib/timestamp.h"
 #include <stdio.h>
 
-
 #ifdef __x86_64__
 #  include <emmintrin.h>
 #endif
@@ -452,24 +451,23 @@ translate_if_needed(u8 *data, u8 *p, s32 *last_x86_pos,
 	 *	0xE8 0xE9 0x48 0x4C 0xF0 0xFF
 	 */
 
-	if ((p[0] & 0xFE) == 0xE8) {
-		if (p[0] & 0x01) {
-			/* 0xE9: Jump relative.  Theoretically this would be
-			 * useful to translate, but in fact it's explicitly
-			 * excluded.  Most likely it creates too many false
-			 * positives for the detection algorithm.  */
-			p += 4;
+	if (p[0] >= 0xF0) {
+		if (p[0] & 0x0F) {
+			/* 0xFF (instruction group)  */
+			if (p[1] == 0x15) {
+				/* Call indirect relative  */
+				opcode_nbytes = 2;
+				goto have_opcode;
+			}
 		} else {
-			/* 0xE8: Call relative.  This is a common case, so it
-			 * uses a reduced max_trans_offset.  In other words, we
-			 * have to be more confident that the data actually is
-			 * x86 machine code before we'll do the translation.  */
-			opcode_nbytes = 1;
-			max_trans_offset >>= 1;
-			goto have_opcode;
+			/* 0xF0 (lock prefix)  */
+			if (p[1] == 0x83 && p[2] == 0x05) {
+				/* Lock add relative  */
+				opcode_nbytes = 3;
+				goto have_opcode;
+			}
 		}
 	} else if (!(p[0] & 0x80)) {
-
 		/* 0x48 or 0x4C.  In 64-bit code this is a REX prefix byte with
 		 * W=1, R=[01], X=0, and B=0, and it will be followed by the
 		 * actual opcode, then additional bytes depending on the opcode.
@@ -495,20 +493,20 @@ translate_if_needed(u8 *data, u8 *p, s32 *last_x86_pos,
 			}
 		}
 	} else {
-		if (p[0] & 0x0F) {
-			/* 0xFF (instruction group)  */
-			if (p[1] == 0x15) {
-				/* Call indirect relative  */
-				opcode_nbytes = 2;
-				goto have_opcode;
-			}
+		if (p[0] & 0x01) {
+			/* 0xE9: Jump relative.  Theoretically this would be
+			 * useful to translate, but in fact it's explicitly
+			 * excluded.  Most likely it creates too many false
+			 * positives for the detection algorithm.  */
+			p += 4;
 		} else {
-			/* 0xF0 (lock prefix)  */
-			if (p[1] == 0x83 && p[2] == 0x05) {
-				/* Lock add relative  */
-				opcode_nbytes = 3;
-				goto have_opcode;
-			}
+			/* 0xE8: Call relative.  This is a common case, so it
+			 * uses a reduced max_trans_offset.  In other words, we
+			 * have to be more confident that the data actually is
+			 * x86 machine code before we'll do the translation.  */
+			opcode_nbytes = 1;
+			max_trans_offset = LZMS_X86_MAX_TRANSLATION_OFFSET / 2;
+			goto have_opcode;
 		}
 	}
 
