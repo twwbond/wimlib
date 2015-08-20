@@ -444,8 +444,6 @@ translate_if_needed(u8 *data, u8 *p, s32 *last_x86_pos,
 	u16 target16;
 	s32 i;
 
-	max_trans_offset = LZMS_X86_MAX_TRANSLATION_OFFSET;
-
 	/*
 	 * p[0] has one of the following values:
 	 *	0xE8 0xE9 0x48 0x4C 0xF0 0xFF
@@ -460,68 +458,69 @@ translate_if_needed(u8 *data, u8 *p, s32 *last_x86_pos,
 		       /*);*/
 	/*}*/
 
-	if (p[0] >= 0xF0) {
-		if (p[0] & 0x0F) {
-			/* 0xFF (instruction group)  */
-			if (p[1] == 0x15) {
-				/* Call indirect relative  */
-				opcode_nbytes = 2;
-				goto have_opcode;
-			}
-		} else {
-			/* 0xF0 (lock prefix)  */
-			if (p[1] == 0x83 && p[2] == 0x05) {
-				/* Lock add relative  */
-				opcode_nbytes = 3;
-				goto have_opcode;
-			}
-		}
-	} else if (!(p[0] & 0x80)) {
-		/* 0x48 or 0x4C.  In 64-bit code this is a REX prefix byte with
-		 * W=1, R=[01], X=0, and B=0, and it will be followed by the
-		 * actual opcode, then additional bytes depending on the opcode.
-		 * We are most interested in several common instructions that
-		 * access data relative to the instruction pointer.  These use a
-		 * 1-byte opcode, followed by a ModR/M byte, followed by a
-		 * 4-byte displacement.  */
 
-		/* Test: does the ModR/M byte indicate RIP-relative addressing?
-		 * Note: there seems to be a mistake in the format here; the
-		 * mask really should be 0xC7 instead of 0x07 so that both the
-		 * MOD and R/M fields of ModR/M are tested, not just R/M.  */
-		if ((p[2] & 0x07) == 0x05) {
-			/* Check for the LEA (load effective address) or MOV
-			 * (move) opcodes.  For MOV there are additional
-			 * restrictions, although it seems they are only helpful
-			 * due to the overly lax ModR/M test.  */
-			if (p[1] == 0x8D ||
-			    (p[1] == 0x8B && !(p[0] & 0x04) && !(p[2] & 0xF0)))
-			{
-				opcode_nbytes = 3;
-				goto have_opcode;
-			}
-		}
-	} else {
-		if (p[0] & 0x01) {
-			/* 0xE9: Jump relative.  Theoretically this would be
-			 * useful to translate, but in fact it's explicitly
-			 * excluded.  Most likely it creates too many false
-			 * positives for the detection algorithm.  */
-			p += 4;
-		} else {
-			/* 0xE8: Call relative.  This is a common case, so it
-			 * uses a reduced max_trans_offset.  In other words, we
-			 * have to be more confident that the data actually is
-			 * x86 machine code before we'll do the translation.  */
-			opcode_nbytes = 1;
-			max_trans_offset >>= 1;
-			goto have_opcode;
-		}
+	static const struct byte_info {
+		u16 mask;
+		u16 desired;
+		u16 skip_length;
+		u16 prefix_length;
+	} byte_infos[] = {
+		[0x48] = {
+			.mask		= 0x07F9,
+			.desired	= 0x0589,
+			.skip_length	= 1,
+			.prefix_length	= 3,
+		},
+		[0x4C] = {
+			.mask		= 0x07FF,
+			.desired	= 0x058D,
+			.skip_length	= 1,
+			.prefix_length	= 3,
+		},
+		[0xE8] = {	/* No restrictions	*/
+			.mask		= 0x0000,
+			.desired	= 0x0000,
+			.skip_length	= 1,
+			.prefix_length	= 1,
+		},
+		[0xE9] = {	/* Never matches	*/
+			.mask		= 0x0000,
+			.desired	= 0xFFFF,
+			.skip_length	= 5,
+			.prefix_length	= 1,
+		},
+		[0xF0] = {	/* Lock add relative	*/
+			.mask		= 0xFFFF,
+			.desired	= 0x0583,
+			.skip_length	= 1,
+			.prefix_length	= 3,
+		},
+		[0xFF] = {	/* Call indirect relative	*/
+			.mask		= 0x00FF,
+			.desired	= 0x0015,
+			.skip_length	= 1,
+			.prefix_length	= 2,
+		},
+	};
+
+	u16 v = get_unaligned_u16_le(&p[1]);
+	const struct byte_info *info = &byte_infos[p[0]];
+
+	if ((v & info->mask) != info->desired)
+		return p + info->skip_length;
+
+	if (p[0] == 0x48) {
+		if (!(p[1] == 0x8D || (p[1] == 0x8B &&
+				       (p[2] == 0x05 || p[2] == 0x0D))))
+		    return p + info->skip_length;
 	}
+	if (p[0] == 0xE8)
+		max_trans_offset = LZMS_X86_MAX_TRANSLATION_OFFSET / 2;
+	else
+		max_trans_offset = LZMS_X86_MAX_TRANSLATION_OFFSET;
 
-	return p + 1;
+	opcode_nbytes = info->prefix_length;
 
-have_opcode:
 	i = p - data;
 	p += opcode_nbytes;
 	if (undo) {
