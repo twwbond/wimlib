@@ -465,7 +465,7 @@ translate_if_needed(u8 *data, u8 *p, s32 *last_x86_pos,
 			max_trans_offset >>= 1;
 			goto have_opcode;
 		}
-	} else if ((p[0] & 0xFB) == 0x48) {
+	} else if (!(p[0] & 0x80)) {
 
 		/* 0x48 or 0x4C.  In 64-bit code this is a REX prefix byte with
 		 * W=1, R=[01], X=0, and B=0, and it will be followed by the
