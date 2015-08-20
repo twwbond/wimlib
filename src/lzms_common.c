@@ -26,6 +26,9 @@
 #include "wimlib/lzms_common.h"
 #include "wimlib/unaligned.h"
 #include "wimlib/x86_cpu_features.h"
+#include "wimlib/timestamp.h"
+#include <stdio.h>
+
 
 #ifdef __x86_64__
 #  include <emmintrin.h>
@@ -550,6 +553,8 @@ void
 lzms_x86_filter(u8 data[restrict], s32 size,
 		s32 last_target_usages[restrict], bool undo)
 {
+	u64 start = now_as_wim_timestamp();
+
 	/*
 	 * Note: this filter runs unconditionally and uses a custom algorithm to
 	 * detect data regions that probably contain x86 code.
@@ -636,4 +641,9 @@ lzms_x86_filter(u8 data[restrict], s32 size,
 		}
 		*(tail_ptr + 8) = saved_byte;
 	}
+
+	u64 end = now_as_wim_timestamp();
+	static u64 total;
+	printf("size=%u, %lu usec, total=%lu\n", size, (end - start) / 10,
+	       (total += (end - start)) / 10);
 }
