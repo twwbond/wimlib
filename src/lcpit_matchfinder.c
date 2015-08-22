@@ -290,12 +290,14 @@ lcpit_advance_one_byte(const u32 cur_pos,
 	/* Get the deepest lcp-interval containing the current suffix. */
 	ref = pos_data[cur_pos];
 
-	/* Prefetch the deepest lcp-interval containing the *next* suffix. */
-	u32 v0 = *next;
-	u32 v1 = pos_data[cur_pos + 2] & POS_MASK;
-	*next = v1;
-	prefetch(&pos_data[intervals[v0] & POS_MASK]);
-	prefetch(&intervals[v1]);
+	u32 v0 = pos_data[next[0]] & POS_MASK;		/* pos_data[intervals[pos_data[cur_pos + 1] & POS_MASK] & POS_MASK] */
+	u32 v1 = intervals[next[1]] & POS_MASK;		/* intervals[pos_data[cur_pos + 2] & POS_MASK] */
+	u32 v2 = pos_data[cur_pos + 3] & POS_MASK;
+	next[0] = v1;
+	next[1] = v2;
+	prefetch(&intervals[v0]);
+	prefetch(&pos_data[v1]);
+	prefetch(&intervals[v2]);
 
 	/* There is no "next suffix" after the current one.  */
 	pos_data[cur_pos] = 0;
@@ -656,7 +658,8 @@ lcpit_matchfinder_load_buffer(struct lcpit_matchfinder *mf, const u8 *T, u32 n)
 		mf->huge_mode = true;
 	}
 	mf->cur_pos = 0; /* starting at beginning of input buffer  */
-	mf->next = 0;
+	for (u32 i = 0; i < ARRAY_LEN(mf->next); i++)
+		mf->next[i] = 0;
 }
 
 /*
@@ -677,7 +680,7 @@ lcpit_matchfinder_get_matches(struct lcpit_matchfinder *mf,
 						   mf->intervals64, matches, true);
 	else
 		return lcpit_advance_one_byte(mf->cur_pos++, mf->pos_data,
-					      mf->intervals, matches, &mf->next, true);
+					      mf->intervals, matches, mf->next, true);
 }
 
 /*
@@ -695,7 +698,7 @@ lcpit_matchfinder_skip_bytes(struct lcpit_matchfinder *mf, u32 count)
 	} else {
 		do {
 			lcpit_advance_one_byte(mf->cur_pos++, mf->pos_data,
-					       mf->intervals, NULL, &mf->next, false);
+					       mf->intervals, NULL, mf->next, false);
 		} while (--count);
 	}
 }
