@@ -291,13 +291,13 @@ lcpit_advance_one_byte(const u32 cur_pos,
 	ref = pos_data[cur_pos];
 
 	u32 v0 = pos_data[next[0]] & POS_MASK;		/* pos_data[intervals[pos_data[cur_pos + 1] & POS_MASK] & POS_MASK] */
+	prefetch(&intervals[v0]);
 	u32 v1 = intervals[next[1]] & POS_MASK;		/* intervals[pos_data[cur_pos + 2] & POS_MASK] */
+	prefetch(&pos_data[v1]);
 	u32 v2 = pos_data[cur_pos + 3] & POS_MASK;
+	prefetch(&intervals[v2]);
 	next[0] = v1;
 	next[1] = v2;
-	prefetch(&intervals[v0]);
-	prefetch(&pos_data[v1]);
-	prefetch(&intervals[v2]);
 
 	/* There is no "next suffix" after the current one.  */
 	pos_data[cur_pos] = 0;
