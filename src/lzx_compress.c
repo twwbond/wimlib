@@ -823,30 +823,26 @@ lzx_write_compressed_code(struct lzx_output_bitstream *os,
 
 #define FLUSH_BITS(level)									\
 {												\
+	if (unlikely(end - next < level * 2)) {							\
+		next = end;									\
+		goto out;									\
+	}											\
 	if (level >= 1 && bitcount >= 16) {							\
 		bitcount -= 16;									\
-		if (next != end) {								\
-			put_unaligned_u16_le(bitbuf >> bitcount, next);				\
-			next += 2;								\
-		}										\
+		put_unaligned_u16_le(bitbuf >> bitcount, next);					\
+		next += 2;									\
 		if (level >= 2 && bitcount >= 16) {						\
 			bitcount -= 16;								\
-			if (next != end) {							\
-				put_unaligned_u16_le(bitbuf >> bitcount, next);			\
-				next += 2;							\
-			}									\
+			put_unaligned_u16_le(bitbuf >> bitcount, next);				\
+			next += 2;								\
 			if (level >= 3 && bitcount >= 16) {					\
 				bitcount -= 16;							\
-				if (next != end) {						\
-					put_unaligned_u16_le(bitbuf >> bitcount, next);		\
-					next += 2;						\
-				}								\
+				put_unaligned_u16_le(bitbuf >> bitcount, next);			\
+				next += 2;							\
 				if (level >= 4 && bitcount >= 16) {				\
 					bitcount -= 16;						\
-					if (next != end) {					\
-						put_unaligned_u16_le(bitbuf >> bitcount, next);	\
-						next += 2;					\
-					}							\
+					put_unaligned_u16_le(bitbuf >> bitcount, next);		\
+					next += 2;						\
 				}								\
 			}									\
 		}										\
