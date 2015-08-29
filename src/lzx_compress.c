@@ -819,7 +819,7 @@ lzx_write_compressed_code(struct lzx_output_bitstream *os,
 /* Output a match or literal.  */
 static inline void
 lzx_write_item(struct lzx_output_bitstream *os, struct lzx_item item,
-	       unsigned ones_if_aligned, const struct lzx_codes *codes)
+	       bool aligned, const struct lzx_codes *codes)
 {
 	u64 data = item.data;
 	unsigned main_symbol;
@@ -850,7 +850,7 @@ lzx_write_item(struct lzx_output_bitstream *os, struct lzx_item item,
 
 	extra_bits = data >> 23;
 
-	if ((num_extra_bits & ones_if_aligned) >= LZX_NUM_ALIGNED_OFFSET_BITS) {
+	if (aligned && num_extra_bits >= LZX_NUM_ALIGNED_OFFSET_BITS) {
 
 		/* Aligned offset blocks: The low 3 bits of the extra offset
 		 * bits are Huffman-encoded using the aligned offset code.  The
@@ -894,10 +894,13 @@ lzx_write_items(struct lzx_output_bitstream *os, int block_type,
 		const struct lzx_item items[], u32 num_items,
 		const struct lzx_codes *codes)
 {
-	unsigned ones_if_aligned = 0U - (block_type == LZX_BLOCKTYPE_ALIGNED);
-
-	for (u32 i = 0; i < num_items; i++)
-		lzx_write_item(os, items[i], ones_if_aligned, codes);
+	if (block_type == LZX_BLOCKTYPE_ALIGNED) {
+		for (u32 i = 0; i < num_items; i++)
+			lzx_write_item(os, items[i], true, codes);
+	} else {
+		for (u32 i = 0; i < num_items; i++)
+			lzx_write_item(os, items[i], false, codes);
+	}
 }
 
 static void
