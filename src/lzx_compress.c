@@ -404,7 +404,7 @@ struct lzx_compressor {
 
 	/* Table mapping match offset => offset slot for small offsets  */
 #define LZX_NUM_FAST_OFFSETS 32768
-	u8 offset_slot_fast[LZX_NUM_FAST_OFFSETS];
+	u8 offset_slot_fast[LZX_NUM_RECENT_OFFSETS + LZX_NUM_FAST_OFFSETS];
 
 	union {
 		/* Data for greedy or lazy parsing  */
@@ -1032,10 +1032,10 @@ lzx_finish_block(struct lzx_compressor *c, struct lzx_output_bitstream *os,
 /* Return the offset slot for the specified offset, which must be
  * less than LZX_NUM_FAST_OFFSETS.  */
 static inline unsigned
-lzx_get_offset_slot_fast(struct lzx_compressor *c, u32 offset)
+lzx_get_offset_slot_fast(struct lzx_compressor *c, u32 adjusted_offset)
 {
 	LZX_ASSERT(offset < LZX_NUM_FAST_OFFSETS);
-	return c->offset_slot_fast[offset];
+	return c->offset_slot_fast[adjusted_offset];
 }
 
 /* Tally, and optionally record, the specified literal byte.  */
@@ -1105,7 +1105,7 @@ lzx_declare_explicit_offset_match(struct lzx_compressor *c, unsigned len, u32 of
 		c->freqs.len[len_symbol]++;
 	}
 
-	offset_slot = lzx_get_offset_slot_fast(c, offset);
+	offset_slot = lzx_get_offset_slot_fast(c, offset + LZX_OFFSET_ADJUSTMENT);
 
 	main_symbol = lzx_main_symbol_for_match(offset_slot, len_header);
 
@@ -1215,7 +1215,7 @@ lzx_declare_item_list(struct lzx_compressor *c, struct lzx_optimum_node *cur_nod
 				unsigned num_extra_bits;
 				u32 extra_bits;
 
-				offset_slot = lzx_get_offset_slot_fast(c, offset_data - LZX_OFFSET_ADJUSTMENT);
+				offset_slot = lzx_get_offset_slot_fast(c, offset_data);
 				main_symbol = lzx_main_symbol_for_match(offset_slot, len_header);
 				c->freqs.main[main_symbol]++;
 				if (record_items)
@@ -1431,7 +1431,7 @@ lzx_find_min_cost_path(struct lzx_compressor * const restrict c,
 			do {
 				u32 offset = cache_ptr->offset;
 				u32 offset_data = offset + LZX_OFFSET_ADJUSTMENT;
-				unsigned offset_slot = lzx_get_offset_slot_fast(c, offset);
+				unsigned offset_slot = lzx_get_offset_slot_fast(c, offset_data);
 				do {
 					u32 cost = cur_node->cost +
 						   c->costs.match_cost[offset_slot][
@@ -2049,12 +2049,13 @@ lzx_init_offset_slot_fast(struct lzx_compressor *c)
 {
 	u8 slot = 0;
 
-	for (u32 offset = 0; offset < LZX_NUM_FAST_OFFSETS; offset++) {
-
-		while (offset + LZX_OFFSET_ADJUSTMENT >= lzx_offset_slot_base[slot + 1])
+	for (u32 adjusted_offset = 0;
+	     adjusted_offset < LZX_NUM_FAST_OFFSETS + LZX_NUM_RECENT_OFFSETS;
+	     adjusted_offset++)
+	{
+		while (adjusted_offset >= lzx_offset_slot_base[slot + 1])
 			slot++;
-
-		c->offset_slot_fast[offset] = slot;
+		c->offset_slot_fast[adjusted_offset] = slot;
 	}
 }
 
