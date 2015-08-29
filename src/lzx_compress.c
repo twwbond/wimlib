@@ -810,6 +810,31 @@ lzx_write_items_impl(struct lzx_output_bitstream * restrict __os,
 		     const struct lzx_item * restrict item,
 		     const struct lzx_codes * restrict codes)
 {
+}
+
+/*
+ * Write all matches and literal bytes (which were precomputed) in an LZX
+ * compressed block to the output bitstream in the final compressed
+ * representation.
+ *
+ * @os
+ *	The output bitstream.
+ * @block_type
+ *	The chosen type of the LZX compressed block (LZX_BLOCKTYPE_ALIGNED or
+ *	LZX_BLOCKTYPE_VERBATIM).
+ * @items
+ *	The array of matches/literals to output.
+ * @num_items
+ *	Number of matches/literals to output (length of @items).
+ * @codes
+ *	The main, length, and aligned offset Huffman codes for the current
+ *	LZX compressed block.
+ */
+static void
+lzx_write_items(struct lzx_output_bitstream *__os, int block_type, const u8 *block_data,
+		const struct lzx_item *item, const struct lzx_codes *codes)
+{
+	unsigned ones_if_aligned = 0U - (block_type == LZX_BLOCKTYPE_ALIGNED);
 	struct lzx_output_bitstream _os = *__os;
 	struct lzx_output_bitstream *os = &_os;
 
@@ -883,7 +908,7 @@ lzx_write_items_impl(struct lzx_output_bitstream * restrict __os,
 		num_extra_bits = lzx_extra_offset_bits[offset_slot];
 		extra_bits = adjusted_offset - lzx_offset_slot_base[offset_slot];
 
-		if (block_type == LZX_BLOCKTYPE_ALIGNED && offset_slot >= 8) {
+		if ((num_extra_bits & ones_if_aligned) >= LZX_NUM_ALIGNED_OFFSET_BITS) {
 
 			/* Aligned offset blocks: The low 3 bits of the extra offset
 			 * bits are Huffman-encoded using the aligned offset code.  The
@@ -902,34 +927,6 @@ lzx_write_items_impl(struct lzx_output_bitstream * restrict __os,
 		lzx_flush_bits_impl(os, 3);
 		item++;
 	}
-}
-
-/*
- * Write all matches and literal bytes (which were precomputed) in an LZX
- * compressed block to the output bitstream in the final compressed
- * representation.
- *
- * @os
- *	The output bitstream.
- * @block_type
- *	The chosen type of the LZX compressed block (LZX_BLOCKTYPE_ALIGNED or
- *	LZX_BLOCKTYPE_VERBATIM).
- * @items
- *	The array of matches/literals to output.
- * @num_items
- *	Number of matches/literals to output (length of @items).
- * @codes
- *	The main, length, and aligned offset Huffman codes for the current
- *	LZX compressed block.
- */
-static void
-lzx_write_items(struct lzx_output_bitstream *os, int block_type, const u8 *block_data,
-		const struct lzx_item *items, const struct lzx_codes *codes)
-{
-	if (block_type == LZX_BLOCKTYPE_ALIGNED)
-		lzx_write_items_impl(os, LZX_BLOCKTYPE_ALIGNED, block_data, items, codes);
-	else
-		lzx_write_items_impl(os, LZX_BLOCKTYPE_VERBATIM, block_data, items, codes);
 }
 
 static void
@@ -1181,7 +1178,7 @@ lzx_tally_item_list(struct lzx_compressor *c, u32 block_size)
 			if (len != 0)
 				break;
 			c->freqs.main[offset_data]++;
-			if (!--node_idx)
+			if (--node_idx == 0)
 				return;
 		}
 
@@ -1627,8 +1624,7 @@ lzx_optimize_and_write_block(struct lzx_compressor * const restrict c,
 	lzx_set_default_costs(c, block_begin, block_size);
 	lzx_reset_symbol_frequencies(c);
 	while (--num_passes_remaining) {
-		new_queue = lzx_find_min_cost_path(c, block_begin,
-						   block_size, initial_queue);
+		lzx_find_min_cost_path(c, block_begin, block_size, initial_queue);
 		lzx_tally_item_list(c, block_size);
 		lzx_make_huffman_codes(c);
 		lzx_update_costs(c);
