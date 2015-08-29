@@ -803,7 +803,7 @@ lzx_write_compressed_code(struct lzx_output_bitstream *os,
 	}
 }
 
-static void
+static inline void
 lzx_write_items_impl(struct lzx_output_bitstream * restrict __os,
 		     int block_type,
 		     const u8 * restrict block_data,
