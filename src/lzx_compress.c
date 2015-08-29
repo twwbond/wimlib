@@ -804,12 +804,15 @@ lzx_write_compressed_code(struct lzx_output_bitstream *os,
 }
 
 static void
-lzx_write_items_impl(struct lzx_output_bitstream * restrict os,
+lzx_write_items_impl(struct lzx_output_bitstream * restrict __os,
 		     int block_type,
 		     const u8 * restrict block_data,
 		     const struct lzx_item * restrict item,
 		     const struct lzx_codes * restrict codes)
 {
+	struct lzx_output_bitstream _os = *__os;
+	struct lzx_output_bitstream *os = &_os;
+
 	for (;;) {
 		unsigned litrunlen = item->litrunlen;
 		unsigned match_hdr;
@@ -856,8 +859,10 @@ lzx_write_items_impl(struct lzx_output_bitstream * restrict os,
 
 		match_hdr = item->match_hdr;
 
-		if (match_hdr == 0xFF)
+		if (match_hdr == 0xFF) {
+			*__os = *os;
 			return;
+		}
 
 		main_symbol = LZX_NUM_CHARS + match_hdr;
 
