@@ -89,24 +89,19 @@ bt_matchfinder_hash_3_bytes(const u8 *in_next)
 }
 
 static inline pos_t *
-bt_child(struct bt_matchfinder *mf, pos_t node, int offset)
+bt_child(struct bt_matchfinder *mf, u32 node, int offset)
 {
-	if (MATCHFINDER_MAX_WINDOW_ORDER < sizeof(pos_t) * 8) {
-		/* no cast needed */
-		return &mf->child_tab[(node << 1) + offset];
-	} else {
-		return &mf->child_tab[((size_t)node << 1) + offset];
-	}
+	return &mf->child_tab[(node << 1) + offset];
 }
 
 static inline pos_t *
-bt_left_child(struct bt_matchfinder *mf, pos_t node)
+bt_left_child(struct bt_matchfinder *mf, u32 node)
 {
 	return bt_child(mf, node, 0);
 }
 
 static inline pos_t *
-bt_right_child(struct bt_matchfinder *mf, pos_t node)
+bt_right_child(struct bt_matchfinder *mf, u32 node)
 {
 	return bt_child(mf, node, 1);
 }
@@ -162,7 +157,7 @@ bt_matchfinder_get_matches(struct bt_matchfinder * const restrict mf,
 {
 	unsigned depth_remaining = max_search_depth;
 	u32 hash;
-	pos_t cur_node;
+	u32 cur_node;
 	const u8 *matchptr;
 	pos_t *pending_lt_ptr, *pending_gt_ptr;
 	unsigned best_lt_len, best_gt_len;
@@ -186,7 +181,7 @@ bt_matchfinder_get_matches(struct bt_matchfinder * const restrict mf,
 	best_gt_len = 0;
 	len = 0;
 
-	if (!matchfinder_node_valid(cur_node)) {
+	if (!cur_node) {
 		*pending_lt_ptr = MATCHFINDER_NULL;
 		*pending_gt_ptr = MATCHFINDER_NULL;
 		*best_len_ret = best_len;
@@ -228,7 +223,7 @@ bt_matchfinder_get_matches(struct bt_matchfinder * const restrict mf,
 				len = best_lt_len;
 		}
 
-		if (!matchfinder_node_valid(cur_node) || !--depth_remaining) {
+		if (!cur_node || !--depth_remaining) {
 			*pending_lt_ptr = MATCHFINDER_NULL;
 			*pending_gt_ptr = MATCHFINDER_NULL;
 			*best_len_ret = best_len;
@@ -294,7 +289,7 @@ bt_matchfinder_skip_position(struct bt_matchfinder * const restrict mf,
 	best_gt_len = 0;
 	len = 0;
 
-	if (!matchfinder_node_valid(cur_node)) {
+	if (!cur_node) {
 		*pending_lt_ptr = MATCHFINDER_NULL;
 		*pending_gt_ptr = MATCHFINDER_NULL;
 		return;
@@ -328,7 +323,7 @@ bt_matchfinder_skip_position(struct bt_matchfinder * const restrict mf,
 				len = best_lt_len;
 		}
 
-		if (!matchfinder_node_valid(cur_node) || !--depth_remaining) {
+		if (!cur_node || !--depth_remaining) {
 			*pending_lt_ptr = MATCHFINDER_NULL;
 			*pending_gt_ptr = MATCHFINDER_NULL;
 			return;

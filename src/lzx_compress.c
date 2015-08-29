@@ -139,7 +139,7 @@
 /*
  * The maximum allowed window order for the matchfinder.
  */
-#define MATCHFINDER_MAX_WINDOW_ORDER	LZX_MAX_WINDOW_ORDER
+#define MATCHFINDER_MAX_WINDOW_ORDER	16
 
 #include <string.h>
 
@@ -1008,6 +1008,7 @@ static void
 lzx_finish_block(struct lzx_compressor *c, struct lzx_output_bitstream *os,
 		 u32 block_size, u32 num_chosen_items)
 {
+	struct lzx_output_bitstream _os = *os;
 	int block_type;
 
 	lzx_make_huffman_codes(c);
@@ -1022,8 +1023,9 @@ lzx_finish_block(struct lzx_compressor *c, struct lzx_output_bitstream *os,
 				   num_chosen_items,
 				   &c->codes[c->codes_index],
 				   &c->codes[c->codes_index ^ 1].lens,
-				   os);
+				   &_os);
 	c->codes_index ^= 1;
+	*os = _os;
 }
 
 /* Return the offset slot for the specified offset, which must be
@@ -1102,9 +1104,7 @@ lzx_declare_explicit_offset_match(struct lzx_compressor *c, unsigned len, u32 of
 		c->freqs.len[len_symbol]++;
 	}
 
-	offset_slot = (offset < LZX_NUM_FAST_OFFSETS) ?
-			lzx_get_offset_slot_fast(c, offset) :
-			lzx_get_offset_slot(offset);
+	offset_slot = lzx_get_offset_slot_fast(c, offset);
 
 	main_symbol = lzx_main_symbol_for_match(offset_slot, len_header);
 
@@ -1289,9 +1289,11 @@ lzx_find_min_cost_path(struct lzx_compressor * const restrict c,
 			unsigned next_len = LZX_MIN_MATCH_LEN;
 			unsigned max_len = min(block_end - in_next, LZX_MAX_MATCH_LEN);
 			const u8 *matchptr;
+			u64 R = QUEUE(in_next).R;
 
 			/* Consider R0 match  */
-			matchptr = in_next - lzx_lru_queue_R0(QUEUE(in_next));
+			matchptr = in_next - (R & LZX_QUEUE64_OFFSET_MASK);
+			R >>= LZX_QUEUE64_OFFSET_SHIFT;
 			if (load_u16_unaligned(matchptr) != load_u16_unaligned(in_next))
 				goto R0_done;
 			BUILD_BUG_ON(LZX_MIN_MATCH_LEN != 2);
@@ -1313,7 +1315,8 @@ lzx_find_min_cost_path(struct lzx_compressor * const restrict c,
 		R0_done:
 
 			/* Consider R1 match  */
-			matchptr = in_next - lzx_lru_queue_R1(QUEUE(in_next));
+			matchptr = in_next - (R & LZX_QUEUE64_OFFSET_MASK);
+			R >>= LZX_QUEUE64_OFFSET_SHIFT;
 			if (load_u16_unaligned(matchptr) != load_u16_unaligned(in_next))
 				goto R1_done;
 			if (matchptr[next_len - 1] != in_next[next_len - 1])
@@ -1339,7 +1342,7 @@ lzx_find_min_cost_path(struct lzx_compressor * const restrict c,
 		R1_done:
 
 			/* Consider R2 match  */
-			matchptr = in_next - lzx_lru_queue_R2(QUEUE(in_next));
+			matchptr = in_next - (R & LZX_QUEUE64_OFFSET_MASK);
 			if (load_u16_unaligned(matchptr) != load_u16_unaligned(in_next))
 				goto R2_done;
 			if (matchptr[next_len - 1] != in_next[next_len - 1])
@@ -1372,9 +1375,7 @@ lzx_find_min_cost_path(struct lzx_compressor * const restrict c,
 			do {
 				u32 offset = cache_ptr->offset;
 				u32 offset_data = offset + LZX_OFFSET_ADJUSTMENT;
-				unsigned offset_slot = (offset < LZX_NUM_FAST_OFFSETS) ?
-						lzx_get_offset_slot_fast(c, offset) :
-						lzx_get_offset_slot(offset);
+				unsigned offset_slot = lzx_get_offset_slot_fast(c, offset);
 				do {
 					u32 cost = cur_node->cost +
 						   c->costs.match_cost[offset_slot][
