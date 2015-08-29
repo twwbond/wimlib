@@ -1176,18 +1176,15 @@ lzx_declare_item_list(struct lzx_compressor *c, struct lzx_optimum_node *cur_nod
 	do {
 		u32 len = cur_node->item & OPTIMUM_LEN_MASK;
 		u32 offset_data = cur_node->item >> OPTIMUM_OFFSET_SHIFT;
+		u64 item_data;
 
 		if (len == 1) {
 			unsigned literal = offset_data;
 			unsigned main_symbol = lzx_main_symbol_for_literal(literal);
 
 			c->freqs.main[main_symbol]++;
-
-			if (record_items) {
-				*--next_item = (struct lzx_item) {
-					.data = main_symbol,
-				};
-			};
+			if (record_items)
+				item_data = main_symbol;
 		} else if (offset_data < LZX_NUM_RECENT_OFFSETS) {
 			unsigned len_header;
 			unsigned len_symbol;
@@ -1207,11 +1204,8 @@ lzx_declare_item_list(struct lzx_compressor *c, struct lzx_optimum_node *cur_nod
 
 			c->freqs.main[main_symbol]++;
 
-			if (record_items) {
-				*--next_item = (struct lzx_item) {
-					.data = (u64)main_symbol | ((u64)len_symbol << 10),
-				};
-			}
+			if (record_items)
+				item_data = (u64)main_symbol | ((u64)len_symbol << 10);
 		} else {
 			u32 offset = offset_data - LZX_OFFSET_ADJUSTMENT;
 			unsigned len_header;
@@ -1243,20 +1237,20 @@ lzx_declare_item_list(struct lzx_compressor *c, struct lzx_optimum_node *cur_nod
 						 LZX_ALIGNED_OFFSET_BITMASK]++;
 
 			if (record_items) {
-
 				extra_bits = (offset + LZX_OFFSET_ADJUSTMENT) -
 					     lzx_offset_slot_base[offset_slot];
 
 				BUILD_BUG_ON(LZX_MAINCODE_MAX_NUM_SYMBOLS > (1 << 10));
 				BUILD_BUG_ON(LZX_LENCODE_NUM_SYMBOLS > (1 << 8));
-				*--next_item = (struct lzx_item) {
-					.data = (u64)main_symbol |
-						((u64)len_symbol << 10) |
-						((u64)num_extra_bits << 18) |
-						((u64)extra_bits << 23),
-				};
+				item_data = (u64)main_symbol |
+					    ((u64)len_symbol << 10) |
+					    ((u64)num_extra_bits << 18) |
+					    ((u64)extra_bits << 23);
 			}
 		}
+
+		if (record_items)
+			*--next_item = (struct lzx_item) { .data = item_data };
 
 		cur_node -= len;
 
@@ -1296,7 +1290,7 @@ lzx_declare_item_list(struct lzx_compressor *c, struct lzx_optimum_node *cur_nod
  * later.  The algorithm does not solve this problem; it only considers the
  * lowest cost to reach each individual position.
  */
-static struct lzx_lru_queue
+static inline struct lzx_lru_queue
 lzx_find_min_cost_path(struct lzx_compressor * const restrict c,
 		       const u8 * const restrict block_begin,
 		       const u32 block_size,
