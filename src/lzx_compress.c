@@ -1185,21 +1185,22 @@ lzx_tally_item_list(struct lzx_compressor *c, u32 block_size)
 				return;
 		}
 
-		unsigned len_header;
 		unsigned offset_slot;
 		unsigned main_symbol;
 
 		node_idx -= len;
 
-		len_header = len - LZX_MIN_MATCH_LEN;;
-		offset_slot = c->offset_slot_fast[offset_data];
+		main_symbol = len - LZX_MIN_MATCH_LEN;;
 
-		if (len_header >= LZX_NUM_PRIMARY_LENS) {
-			c->freqs.len[len_header - LZX_NUM_PRIMARY_LENS]++;
-			len_header = LZX_NUM_PRIMARY_LENS;
+		if (main_symbol >= LZX_NUM_PRIMARY_LENS) {
+			c->freqs.len[main_symbol - LZX_NUM_PRIMARY_LENS]++;
+			main_symbol = LZX_NUM_PRIMARY_LENS;
 		}
 
-		main_symbol = lzx_main_symbol_for_match(offset_slot, len_header);
+		offset_slot = c->offset_slot_fast[offset_data];
+		main_symbol |= offset_slot << 3;
+		main_symbol |= 256;
+
 		c->freqs.main[main_symbol]++;
 
 		if (offset_slot >= 8)
@@ -1232,30 +1233,29 @@ lzx_record_item_list(struct lzx_compressor *c, u32 block_size)
 				goto out;
 		}
 
-		unsigned len_header;
 		unsigned offset_slot;
 		unsigned main_symbol;
 
 		node_idx -= len;
 
-		len_header = len - LZX_MIN_MATCH_LEN;;
+		main_symbol = len - LZX_MIN_MATCH_LEN;;
 		offset_slot = c->offset_slot_fast[offset_data];
 
 		c->chosen_items[item_idx].litrunlen = litrunlen;
 		item_idx--;
-		c->chosen_items[item_idx].adjusted_length = len_header;
+		c->chosen_items[item_idx].adjusted_length = main_symbol;
 		c->chosen_items[item_idx].offset_slot_and_adjusted_offset =
 			(offset_data << 8) | offset_slot;
 		litrunlen = 0;
 
-		if (len_header >= LZX_NUM_PRIMARY_LENS) {
-			c->freqs.len[len_header - LZX_NUM_PRIMARY_LENS]++;
-			len_header = LZX_NUM_PRIMARY_LENS;
+		if (main_symbol >= LZX_NUM_PRIMARY_LENS) {
+			c->freqs.len[main_symbol - LZX_NUM_PRIMARY_LENS]++;
+			main_symbol = LZX_NUM_PRIMARY_LENS;
 		}
 
-		main_symbol = lzx_main_symbol_for_match(offset_slot, len_header);
-		c->freqs.main[main_symbol]++;
-		c->chosen_items[item_idx].match_hdr = main_symbol - LZX_NUM_CHARS;
+		main_symbol |= (offset_slot << 3);
+		c->freqs.main[256 | main_symbol]++;
+		c->chosen_items[item_idx].match_hdr = main_symbol;
 
 		if (offset_slot >= 8)
 			c->freqs.aligned[offset_data & LZX_ALIGNED_OFFSET_BITMASK]++;
