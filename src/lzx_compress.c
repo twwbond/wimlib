@@ -544,6 +544,13 @@ lzx_flush_bits_impl(struct lzx_output_bitstream *os, int level)
 					put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next);
 					os->next += 2;
 				}
+				if (level >= 4 && os->bitcount >= 16) {
+					os->bitcount -= 16;
+					if (os->next != os->end) {
+						put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next);
+						os->next += 2;
+					}
+				}
 			}
 		}
 	}
@@ -815,15 +822,36 @@ lzx_write_items_impl(struct lzx_output_bitstream * restrict os,
 
 		if (litrunlen) {
 
-			do {
+			while (litrunlen >= 4) {
 				unsigned lit0 = block_data[0];
+				unsigned lit1 = block_data[1];
+				unsigned lit2 = block_data[2];
+				unsigned lit3 = block_data[3];
 
 				lzx_add_bits(os, codes->codewords.main[lit0], codes->lens.main[lit0]);
+				lzx_add_bits(os, codes->codewords.main[lit1], codes->lens.main[lit1]);
+				lzx_add_bits(os, codes->codewords.main[lit2], codes->lens.main[lit2]);
+				lzx_add_bits(os, codes->codewords.main[lit3], codes->lens.main[lit3]);
 
-				lzx_flush_bits_impl(os, 1);
+				lzx_flush_bits_impl(os, 4);
 
-				block_data += 1;
-			} while (--litrunlen);
+				block_data += 4;
+				litrunlen -= 4;
+			}
+
+			if (litrunlen--) {
+				unsigned lit = *block_data++;
+				lzx_add_bits(os, codes->codewords.main[lit], codes->lens.main[lit]);
+				if (litrunlen--) {
+					unsigned lit = *block_data++;
+					lzx_add_bits(os, codes->codewords.main[lit], codes->lens.main[lit]);
+					if (litrunlen--) {
+						unsigned lit = *block_data++;
+						lzx_add_bits(os, codes->codewords.main[lit], codes->lens.main[lit]);
+					}
+				}
+				lzx_flush_bits_impl(os, 3);
+			}
 		}
 
 		match_hdr = item->match_hdr;
