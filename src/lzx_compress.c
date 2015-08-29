@@ -1174,9 +1174,10 @@ lzx_tally_item_list(struct lzx_compressor *c, u32 block_size)
 	for (;;) {
 
 		for (;;) {
-			len = c->optimum_nodes[node_idx].item & OPTIMUM_LEN_MASK;
-			offset_data = c->optimum_nodes[node_idx].item >> OPTIMUM_OFFSET_SHIFT;
+			u32 item = c->optimum_nodes[node_idx].item;
 
+			len = item & OPTIMUM_LEN_MASK;
+			offset_data = item >> OPTIMUM_OFFSET_SHIFT;
 			if (len != 0)
 				break;
 			c->freqs.main[offset_data]++;
@@ -1184,28 +1185,22 @@ lzx_tally_item_list(struct lzx_compressor *c, u32 block_size)
 				return;
 		}
 
-		unsigned offset_slot;
-		unsigned main_symbol;
-
 		node_idx -= len;
 
-		main_symbol = len - LZX_MIN_MATCH_LEN;;
-
-		if (main_symbol >= LZX_NUM_PRIMARY_LENS) {
-			c->freqs.len[main_symbol - LZX_NUM_PRIMARY_LENS]++;
-			main_symbol = LZX_NUM_PRIMARY_LENS;
+		unsigned v = len - LZX_MIN_MATCH_LEN;;
+		if (v >= LZX_NUM_PRIMARY_LENS) {
+			c->freqs.len[v - LZX_NUM_PRIMARY_LENS]++;
+			v = LZX_NUM_PRIMARY_LENS;
 		}
 
-		offset_slot = c->offset_slot_fast[offset_data];
+		unsigned offset_slot = c->offset_slot_fast[offset_data];
 
 		if (offset_slot >= 8)
 			c->freqs.aligned[offset_data & LZX_ALIGNED_OFFSET_BITMASK]++;
 
-		main_symbol |= offset_slot << 3;
-		main_symbol |= 256;
-
-		c->freqs.main[main_symbol]++;
-
+		v += offset_slot * (LZX_NUM_PRIMARY_LENS + 1);
+		v += LZX_NUM_CHARS;
+		c->freqs.main[v]++;
 	}
 }
 
@@ -1214,57 +1209,51 @@ lzx_record_item_list(struct lzx_compressor *c, u32 block_size)
 {
 	u32 node_idx = block_size;
 	u32 item_idx = block_size;
-	unsigned litrunlen = 0;
 
 	c->chosen_items[item_idx].match_hdr = 0xFF;
 
 	u32 len;
 	u32 offset_data;
+	u32 lit_start_node;
 	for (;;) {
 
+		lit_start_node = node_idx;
 		for (;;) {
-			len = c->optimum_nodes[node_idx].item & OPTIMUM_LEN_MASK;
-			offset_data = c->optimum_nodes[node_idx].item >> OPTIMUM_OFFSET_SHIFT;
+			u32 item = c->optimum_nodes[node_idx].item;
 
+			len = item & OPTIMUM_LEN_MASK;
+			offset_data = item >> OPTIMUM_OFFSET_SHIFT;
 			if (len != 0)
 				break;
 			c->freqs.main[offset_data]++;
-			litrunlen++;
 			if (--node_idx == 0)
 				goto out;
 		}
 
-		unsigned offset_slot;
-		unsigned main_symbol;
-
+		unsigned v = len - LZX_MIN_MATCH_LEN;;
+		unsigned offset_slot = c->offset_slot_fast[offset_data];
+		c->chosen_items[item_idx].litrunlen = lit_start_node - node_idx;
 		node_idx -= len;
-
-		main_symbol = len - LZX_MIN_MATCH_LEN;;
-		offset_slot = c->offset_slot_fast[offset_data];
-
-		c->chosen_items[item_idx].litrunlen = litrunlen;
-		c->chosen_items[item_idx - 1].adjusted_length = main_symbol;
-		c->chosen_items[item_idx - 1].offset_slot_and_adjusted_offset =
-			(offset_data << 8) | offset_slot;
 		item_idx--;
-		litrunlen = 0;
+		c->chosen_items[item_idx].adjusted_length = v;
+		c->chosen_items[item_idx].offset_slot_and_adjusted_offset =
+			(offset_data << 8) | offset_slot;
 
 		if (offset_slot >= 8)
 			c->freqs.aligned[offset_data & LZX_ALIGNED_OFFSET_BITMASK]++;
 
-		if (main_symbol >= LZX_NUM_PRIMARY_LENS) {
-			c->freqs.len[main_symbol - LZX_NUM_PRIMARY_LENS]++;
-			main_symbol = LZX_NUM_PRIMARY_LENS;
+		if (v >= LZX_NUM_PRIMARY_LENS) {
+			c->freqs.len[v - LZX_NUM_PRIMARY_LENS]++;
+			v = LZX_NUM_PRIMARY_LENS;
 		}
 
-		main_symbol |= (offset_slot << 3);
-		c->freqs.main[256 | main_symbol]++;
-		c->chosen_items[item_idx].match_hdr = main_symbol;
-
+		v += offset_slot * (LZX_NUM_PRIMARY_LENS + 1);
+		c->freqs.main[LZX_NUM_CHARS | v]++;
+		c->chosen_items[item_idx].match_hdr = v;
 	}
 
 out:
-	c->chosen_items[item_idx].litrunlen = litrunlen;
+	c->chosen_items[item_idx].litrunlen = lit_start_node - node_idx;
 
 	return item_idx;
 }
