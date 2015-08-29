@@ -1175,10 +1175,10 @@ lzx_tally_item_list(struct lzx_compressor *c, u32 block_size)
 }
 
 static struct lzx_item *
-lzx_record_item_list(struct lzx_compressor *c, u32 block_size,
-		     struct lzx_item *next_item)
+lzx_record_item_list(struct lzx_compressor *c, u32 block_size)
 {
 	struct lzx_optimum_node *cur_node = &c->optimum_nodes[block_size];
+	struct lzx_item *next_item = &c->chosen_items[block_size];
 	unsigned litrunlen = 0;
 
 	next_item->match_hdr = 0xFF;
@@ -1604,8 +1604,7 @@ lzx_optimize_and_write_block(struct lzx_compressor *c,
 		}
 	} while (--num_passes_remaining);
 
-	chosen_items = lzx_record_item_list(c, block_size,
-					    &c->chosen_items[ARRAY_LEN(c->chosen_items) - 1]);
+	chosen_items = lzx_record_item_list(c, block_size);
 	lzx_finish_block(c, os, block_begin, block_size, chosen_items);
 	return new_queue;
 }
