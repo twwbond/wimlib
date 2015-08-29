@@ -595,19 +595,19 @@ lzx_make_huffman_codes(struct lzx_compressor *c)
 	struct lzx_codes *codes = &c->codes[c->codes_index];
 
 	make_canonical_huffman_code(c->num_main_syms,
-				    LZX_MAX_MAIN_CODEWORD_LEN,
+				    12,
 				    freqs->main,
 				    codes->lens.main,
 				    codes->codewords.main);
 
 	make_canonical_huffman_code(LZX_LENCODE_NUM_SYMBOLS,
-				    LZX_MAX_LEN_CODEWORD_LEN,
+				    9,
 				    freqs->len,
 				    codes->lens.len,
 				    codes->codewords.len);
 
 	make_canonical_huffman_code(LZX_ALIGNEDCODE_NUM_SYMBOLS,
-				    LZX_MAX_ALIGNED_CODEWORD_LEN,
+				    7,
 				    freqs->aligned,
 				    codes->lens.aligned,
 				    codes->codewords.aligned);
@@ -813,9 +813,9 @@ lzx_write_item(struct lzx_output_bitstream *os, struct lzx_item item,
 
 	lzx_add_bits(os, codes->codewords.main[main_symbol],
 		     codes->lens.main[main_symbol]);
-	lzx_flush_bits_impl(os, 1);
 
 	if (main_symbol < LZX_NUM_CHARS) { /* Literal?  */
+		lzx_flush_bits_impl(os, 1);
 		return;
 	}
 
@@ -827,30 +827,28 @@ lzx_write_item(struct lzx_output_bitstream *os, struct lzx_item item,
 	}
 
 	num_extra_bits = (data >> 18) & 0x1F;
-	if (num_extra_bits == 0)  /* Small offset or repeat offset match?  */
-		return;
+	if (num_extra_bits) {
+		extra_bits = data >> 23;
 
-	extra_bits = data >> 23;
+		if (aligned && num_extra_bits >= LZX_NUM_ALIGNED_OFFSET_BITS) {
 
-	if (aligned && num_extra_bits >= LZX_NUM_ALIGNED_OFFSET_BITS) {
+			/* Aligned offset blocks: The low 3 bits of the extra offset
+			 * bits are Huffman-encoded using the aligned offset code.  The
+			 * remaining bits are output literally.  */
 
-		/* Aligned offset blocks: The low 3 bits of the extra offset
-		 * bits are Huffman-encoded using the aligned offset code.  The
-		 * remaining bits are output literally.  */
+			lzx_add_bits(os, extra_bits >> LZX_NUM_ALIGNED_OFFSET_BITS,
+					num_extra_bits - LZX_NUM_ALIGNED_OFFSET_BITS);
 
-		lzx_add_bits(os, extra_bits >> LZX_NUM_ALIGNED_OFFSET_BITS,
-				num_extra_bits - LZX_NUM_ALIGNED_OFFSET_BITS);
-
-		lzx_add_bits(os,
-			     codes->codewords.aligned[extra_bits & LZX_ALIGNED_OFFSET_BITMASK],
-			     codes->lens.aligned[extra_bits & LZX_ALIGNED_OFFSET_BITMASK]);
-	} else {
-		/* Verbatim blocks, or fewer than 3 extra bits:  All extra
-		 * offset bits are output literally.  */
-		lzx_add_bits(os, extra_bits, num_extra_bits);
-	}
-
-	lzx_flush_bits(os);
+			lzx_add_bits(os, codes->codewords.aligned[extra_bits & LZX_ALIGNED_OFFSET_BITMASK],
+				     codes->lens.aligned[extra_bits & LZX_ALIGNED_OFFSET_BITMASK]);
+		} else {
+			/* Verbatim blocks, or fewer than 3 extra bits:  All extra
+			 * offset bits are output literally.  */
+			lzx_add_bits(os, extra_bits, num_extra_bits);
+		}
+		lzx_flush_bits_impl(os, 3);
+	} else
+		lzx_flush_bits_impl(os, 2);
 }
 
 /*
