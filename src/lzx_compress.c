@@ -1185,6 +1185,7 @@ lzx_declare_item_list(struct lzx_compressor *c, struct lzx_optimum_node *cur_nod
 			c->freqs.main[main_symbol]++;
 			if (record_items)
 				item_data = main_symbol;
+			cur_node--;
 		} else {
 			unsigned main_symbol;
 			unsigned offset_slot;
@@ -1227,12 +1228,11 @@ lzx_declare_item_list(struct lzx_compressor *c, struct lzx_optimum_node *cur_nod
 				item_data |= num_extra_bits << 18;
 				item_data |= (u64)extra_bits << 23;
 			}
+			cur_node -= len;
 		}
 
 		if (record_items)
 			*--next_item = (struct lzx_item) { .data = item_data };
-
-		cur_node -= len;
 
 	} while (cur_node != c->optimum_nodes);
 
