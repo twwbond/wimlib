@@ -1040,8 +1040,7 @@ lzx_choose_verbatim_or_aligned(const struct lzx_freqs * freqs,
  */
 static void
 lzx_finish_block(struct lzx_compressor *c, struct lzx_output_bitstream *os,
-		 const u8 *block_begin, u32 block_size,
-		 struct lzx_item *chosen_items)
+		 const u8 *block_begin, u32 block_size, u32 item_idx)
 {
 	struct lzx_output_bitstream _os = *os;
 	int block_type;
@@ -1055,7 +1054,7 @@ lzx_finish_block(struct lzx_compressor *c, struct lzx_output_bitstream *os,
 				   block_size,
 				   c->window_order,
 				   c->num_main_syms,
-				   chosen_items,
+				   &c->chosen_items[item_idx],
 				   &c->codes[c->codes_index],
 				   &c->codes[c->codes_index ^ 1].lens,
 				   &_os);
@@ -1210,7 +1209,7 @@ lzx_tally_item_list(struct lzx_compressor *c, u32 block_size)
 	}
 }
 
-static struct lzx_item *
+static u32
 lzx_record_item_list(struct lzx_compressor *c, u32 block_size)
 {
 	u32 node_idx = block_size;
@@ -1267,7 +1266,7 @@ lzx_record_item_list(struct lzx_compressor *c, u32 block_size)
 out:
 	c->chosen_items[item_idx].litrunlen = litrunlen;
 
-	return &c->chosen_items[item_idx];
+	return item_idx;
 }
 
 /*
@@ -1628,7 +1627,7 @@ lzx_optimize_and_write_block(struct lzx_compressor *c,
 			     const struct lzx_lru_queue initial_queue)
 {
 	unsigned num_passes_remaining = c->num_optim_passes;
-	struct lzx_item *chosen_items;
+	u32 item_idx;
 	struct lzx_lru_queue new_queue;
 
 	/* The first optimization pass uses a default cost model.  Each
@@ -1648,8 +1647,8 @@ lzx_optimize_and_write_block(struct lzx_compressor *c,
 		}
 	} while (--num_passes_remaining);
 
-	chosen_items = lzx_record_item_list(c, block_size);
-	lzx_finish_block(c, os, block_begin, block_size, chosen_items);
+	item_idx = lzx_record_item_list(c, block_size);
+	lzx_finish_block(c, os, block_begin, block_size, item_idx);
 	return new_queue;
 }
 
@@ -2059,8 +2058,7 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 			in_next += skip_len;
 		} while (in_next < in_block_end);
 
-		lzx_finish_block(c, os, in_block_begin, in_next - in_block_begin,
-				 c->chosen_items);
+		lzx_finish_block(c, os, in_block_begin, in_next - in_block_begin, 0);
 	} while (in_next != in_end);
 }
 
