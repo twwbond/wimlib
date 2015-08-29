@@ -1177,20 +1177,20 @@ lzx_tally_item_list(struct lzx_compressor *c, u32 block_size)
 static struct lzx_item *
 lzx_record_item_list(struct lzx_compressor *c, u32 block_size)
 {
-	struct lzx_optimum_node *cur_node = &c->optimum_nodes[block_size];
-	struct lzx_item *next_item = &c->chosen_items[block_size];
+	u32 node_idx = block_size;
+	u32 item_idx = block_size;
 	unsigned litrunlen = 0;
 
-	next_item->match_hdr = 0xFF;
+	c->chosen_items[item_idx].match_hdr = 0xFF;
 
 	do {
-		const u32 len = cur_node->item & OPTIMUM_LEN_MASK;
-		const u32 offset_data = cur_node->item >> OPTIMUM_OFFSET_SHIFT;
+		const u32 len = c->optimum_nodes[node_idx].item & OPTIMUM_LEN_MASK;
+		const u32 offset_data = c->optimum_nodes[node_idx].item >> OPTIMUM_OFFSET_SHIFT;
 
 		if (len == 1) {
 			c->freqs.main[offset_data]++;
 			litrunlen++;
-			cur_node--;
+			node_idx--;
 		} else {
 			unsigned len_header;
 			unsigned offset_slot;
@@ -1199,11 +1199,11 @@ lzx_record_item_list(struct lzx_compressor *c, u32 block_size)
 			len_header = len - LZX_MIN_MATCH_LEN;;
 			offset_slot = lzx_get_offset_slot_fast(c, offset_data);
 
-			next_item->litrunlen = litrunlen;
-			next_item--;
-			next_item->adjusted_length = len_header;
-			next_item->adjusted_offset = offset_data;
-			next_item->offset_slot = offset_slot;
+			c->chosen_items[item_idx].litrunlen = litrunlen;
+			item_idx--;
+			c->chosen_items[item_idx].adjusted_length = len_header;
+			c->chosen_items[item_idx].adjusted_offset = offset_data;
+			c->chosen_items[item_idx].offset_slot = offset_slot;
 			litrunlen = 0;
 
 			if (len_header >= LZX_NUM_PRIMARY_LENS) {
@@ -1213,17 +1213,17 @@ lzx_record_item_list(struct lzx_compressor *c, u32 block_size)
 
 			main_symbol = lzx_main_symbol_for_match(offset_slot, len_header);
 			c->freqs.main[main_symbol]++;
-			next_item->match_hdr = main_symbol - LZX_NUM_CHARS;
+			c->chosen_items[item_idx].match_hdr = main_symbol - LZX_NUM_CHARS;
 
 			if (offset_slot >= 8)
 				c->freqs.aligned[offset_data & LZX_ALIGNED_OFFSET_BITMASK]++;
-			cur_node -= len;
+			node_idx -= len;
 		}
-	} while (cur_node != c->optimum_nodes);
+	} while (node_idx != 0);
 
-	next_item->litrunlen = litrunlen;
+	c->chosen_items[item_idx].litrunlen = litrunlen;
 
-	return next_item;
+	return &c->chosen_items[item_idx];
 }
 
 /*
