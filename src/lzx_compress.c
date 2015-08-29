@@ -206,8 +206,7 @@ struct lzx_item {
 	u16 litrunlen;
 	u8 match_hdr;
 	u8 adjusted_length;
-	u32 offset_slot : 8;
-	u32 adjusted_offset : 24;
+	u32 offset_slot_and_adjusted_offset;
 };
 
 /*
@@ -834,7 +833,7 @@ lzx_write_items_impl(struct lzx_output_bitstream *os, int block_type, const u8 *
 		lzx_add_bits(os, codes->codewords.main[main_symbol], codes->lens.main[main_symbol]);
 
 		adjusted_length = item->adjusted_length;
-		adjusted_offset = item->adjusted_offset;
+		adjusted_offset = item->offset_slot_and_adjusted_offset >> 8;
 
 		block_data += adjusted_length + LZX_MIN_MATCH_LEN;
 
@@ -843,7 +842,7 @@ lzx_write_items_impl(struct lzx_output_bitstream *os, int block_type, const u8 *
 				     codes->lens.len[adjusted_length - LZX_NUM_PRIMARY_LENS]);
 		}
 
-		offset_slot = item->offset_slot;
+		offset_slot = item->offset_slot_and_adjusted_offset & 0xFF;
 
 		num_extra_bits = lzx_extra_offset_bits[offset_slot];
 		extra_bits = adjusted_offset - lzx_offset_slot_base[offset_slot];
@@ -1202,8 +1201,8 @@ lzx_record_item_list(struct lzx_compressor *c, u32 block_size)
 			c->chosen_items[item_idx].litrunlen = litrunlen;
 			item_idx--;
 			c->chosen_items[item_idx].adjusted_length = len_header;
-			c->chosen_items[item_idx].adjusted_offset = offset_data;
-			c->chosen_items[item_idx].offset_slot = offset_slot;
+			c->chosen_items[item_idx].offset_slot_and_adjusted_offset =
+				(offset_data << 8) | offset_slot;
 			litrunlen = 0;
 
 			if (len_header >= LZX_NUM_PRIMARY_LENS) {
