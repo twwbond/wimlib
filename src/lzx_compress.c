@@ -902,7 +902,7 @@ lzx_write_items(struct lzx_output_bitstream *os, int block_type, const u8 *block
 				ADD_BITS(codes->codewords.main[lit2], codes->lens.main[lit2]);
 				ADD_BITS(codes->codewords.main[lit3], codes->lens.main[lit3]);
 
-				FLUSH_BITS(4);
+				FLUSH_BITS(3);
 
 				block_data += 4;
 				litrunlen -= 4;
@@ -925,10 +925,8 @@ lzx_write_items(struct lzx_output_bitstream *os, int block_type, const u8 *block
 
 		match_hdr = item->match_hdr;
 
-		if (match_hdr == 0xFF) {
-			PACK_BITSTREAM;
-			return;
-		}
+		if (match_hdr == 0xFF)
+			goto out;
 
 		main_symbol = LZX_NUM_CHARS + match_hdr;
 
@@ -968,6 +966,10 @@ lzx_write_items(struct lzx_output_bitstream *os, int block_type, const u8 *block
 		FLUSH_BITS(3);
 		item++;
 	}
+
+out:
+	PACK_BITSTREAM;
+	return;
 }
 
 static void
