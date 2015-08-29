@@ -203,10 +203,11 @@ struct lzx_freqs {
 
 /* Intermediate LZX match/literal format  */
 struct lzx_item {
-	u16 main_symbol;
+	u16 litrunlen;
+	u8 match_hdr;
 	u8 adjusted_length;
-	u8 offset_slot;
-	u32 adjusted_offset;
+	u32 offset_slot : 8;
+	u32 adjusted_offset : 24;
 };
 
 /*
@@ -796,56 +797,76 @@ lzx_write_compressed_code(struct lzx_output_bitstream *os,
 	}
 }
 
-/* Output a match or literal.  */
-static inline void
-lzx_write_item(struct lzx_output_bitstream *os, const struct lzx_item *item,
-	       bool aligned, const struct lzx_codes *codes)
+static void
+lzx_write_items_impl(struct lzx_output_bitstream *os, int block_type, const u8 *block_data,
+		     const struct lzx_item *item, const struct lzx_codes *codes)
 {
-	unsigned main_symbol = item->main_symbol;
-	unsigned adjusted_length;
-	u32 adjusted_offset;
-	unsigned offset_slot;
-	unsigned num_extra_bits;
-	u32 extra_bits;
+	for (;;) {
+		unsigned litrunlen = item->litrunlen;
+		unsigned match_hdr;
+		unsigned main_symbol;
+		unsigned adjusted_length;
+		u32 adjusted_offset;
+		unsigned offset_slot;
+		unsigned num_extra_bits;
+		u32 extra_bits;
 
-	lzx_add_bits(os, codes->codewords.main[main_symbol],
-		     codes->lens.main[main_symbol]);
+		if (litrunlen) {
 
-	if (main_symbol < LZX_NUM_CHARS) { /* Literal?  */
-		lzx_flush_bits_impl(os, 1);
-		return;
+			do {
+				unsigned lit0 = block_data[0];
+
+				lzx_add_bits(os, codes->codewords.main[lit0], codes->lens.main[lit0]);
+
+				lzx_flush_bits_impl(os, 1);
+
+				block_data += 1;
+			} while (--litrunlen);
+		}
+
+		match_hdr = item->match_hdr;
+
+		if (match_hdr == 0xFF)
+			return;
+
+		main_symbol = LZX_NUM_CHARS + match_hdr;
+
+		lzx_add_bits(os, codes->codewords.main[main_symbol], codes->lens.main[main_symbol]);
+
+		adjusted_length = item->adjusted_length;
+		adjusted_offset = item->adjusted_offset;
+
+		block_data += adjusted_length + LZX_MIN_MATCH_LEN;
+
+		if (adjusted_length >= LZX_NUM_PRIMARY_LENS) {
+			lzx_add_bits(os, codes->codewords.len[adjusted_length - LZX_NUM_PRIMARY_LENS],
+				     codes->lens.len[adjusted_length - LZX_NUM_PRIMARY_LENS]);
+		}
+
+		offset_slot = item->offset_slot;
+
+		num_extra_bits = lzx_extra_offset_bits[offset_slot];
+		extra_bits = adjusted_offset - lzx_offset_slot_base[offset_slot];
+
+		if (block_type == LZX_BLOCKTYPE_ALIGNED && offset_slot >= 8) {
+
+			/* Aligned offset blocks: The low 3 bits of the extra offset
+			 * bits are Huffman-encoded using the aligned offset code.  The
+			 * remaining bits are output literally.  */
+
+			lzx_add_bits(os, extra_bits >> LZX_NUM_ALIGNED_OFFSET_BITS,
+					num_extra_bits - LZX_NUM_ALIGNED_OFFSET_BITS);
+
+			lzx_add_bits(os, codes->codewords.aligned[adjusted_offset & LZX_ALIGNED_OFFSET_BITMASK],
+				     codes->lens.aligned[adjusted_offset & LZX_ALIGNED_OFFSET_BITMASK]);
+		} else {
+			/* Verbatim blocks, or fewer than 3 extra bits:  All extra
+			 * offset bits are output literally.  */
+			lzx_add_bits(os, extra_bits, num_extra_bits);
+		}
+		lzx_flush_bits_impl(os, 3);
+		item++;
 	}
-
-	adjusted_length = item->adjusted_length;
-	adjusted_offset = item->adjusted_offset;
-
-	if (adjusted_length >= LZX_NUM_PRIMARY_LENS) {
-		lzx_add_bits(os, codes->codewords.len[adjusted_length - LZX_NUM_PRIMARY_LENS],
-			     codes->lens.len[adjusted_length - LZX_NUM_PRIMARY_LENS]);
-	}
-
-	offset_slot = item->offset_slot;
-
-	num_extra_bits = lzx_extra_offset_bits[offset_slot];
-	extra_bits = adjusted_offset - lzx_offset_slot_base[offset_slot];
-
-	if (aligned && offset_slot >= 8) {
-
-		/* Aligned offset blocks: The low 3 bits of the extra offset
-		 * bits are Huffman-encoded using the aligned offset code.  The
-		 * remaining bits are output literally.  */
-
-		lzx_add_bits(os, extra_bits >> LZX_NUM_ALIGNED_OFFSET_BITS,
-				num_extra_bits - LZX_NUM_ALIGNED_OFFSET_BITS);
-
-		lzx_add_bits(os, codes->codewords.aligned[adjusted_offset & LZX_ALIGNED_OFFSET_BITMASK],
-			     codes->lens.aligned[adjusted_offset & LZX_ALIGNED_OFFSET_BITMASK]);
-	} else {
-		/* Verbatim blocks, or fewer than 3 extra bits:  All extra
-		 * offset bits are output literally.  */
-		lzx_add_bits(os, extra_bits, num_extra_bits);
-	}
-	lzx_flush_bits_impl(os, 3);
 }
 
 /*
@@ -867,26 +888,22 @@ lzx_write_item(struct lzx_output_bitstream *os, const struct lzx_item *item,
  *	LZX compressed block.
  */
 static void
-lzx_write_items(struct lzx_output_bitstream *os, int block_type,
-		const struct lzx_item items[], u32 num_items,
-		const struct lzx_codes *codes)
+lzx_write_items(struct lzx_output_bitstream *os, int block_type, const u8 *block_data,
+		const struct lzx_item *items, const struct lzx_codes *codes)
 {
-	if (block_type == LZX_BLOCKTYPE_ALIGNED) {
-		for (u32 i = 0; i < num_items; i++)
-			lzx_write_item(os, &items[i], true, codes);
-	} else {
-		for (u32 i = 0; i < num_items; i++)
-			lzx_write_item(os, &items[i], false, codes);
-	}
+	if (block_type == LZX_BLOCKTYPE_ALIGNED)
+		lzx_write_items_impl(os, LZX_BLOCKTYPE_ALIGNED, block_data, items, codes);
+	else
+		lzx_write_items_impl(os, LZX_BLOCKTYPE_VERBATIM, block_data, items, codes);
 }
 
 static void
-lzx_write_compressed_block(int block_type,
+lzx_write_compressed_block(const u8 *block_begin,
+			   int block_type,
 			   u32 block_size,
 			   unsigned window_order,
 			   unsigned num_main_syms,
 			   const struct lzx_item chosen_items[],
-			   u32 num_chosen_items,
 			   const struct lzx_codes * codes,
 			   const struct lzx_lens * prev_lens,
 			   struct lzx_output_bitstream * os)
@@ -948,7 +965,7 @@ lzx_write_compressed_block(int block_type,
 				  LZX_LENCODE_NUM_SYMBOLS);
 
 	/* Output the compressed matches and literals.  */
-	lzx_write_items(os, block_type, chosen_items, num_chosen_items, codes);
+	lzx_write_items(os, block_type, block_begin, chosen_items, codes);
 }
 
 /* Given the frequencies of symbols in an LZX-compressed block and the
@@ -988,8 +1005,8 @@ lzx_choose_verbatim_or_aligned(const struct lzx_freqs * freqs,
  */
 static void
 lzx_finish_block(struct lzx_compressor *c, struct lzx_output_bitstream *os,
-		 u32 block_size, struct lzx_item *chosen_items,
-		 u32 num_chosen_items)
+		 const u8 *block_begin, u32 block_size,
+		 struct lzx_item *chosen_items)
 {
 	struct lzx_output_bitstream _os = *os;
 	int block_type;
@@ -998,12 +1015,12 @@ lzx_finish_block(struct lzx_compressor *c, struct lzx_output_bitstream *os,
 
 	block_type = lzx_choose_verbatim_or_aligned(&c->freqs,
 						    &c->codes[c->codes_index]);
-	lzx_write_compressed_block(block_type,
+	lzx_write_compressed_block(block_begin,
+				   block_type,
 				   block_size,
 				   c->window_order,
 				   c->num_main_syms,
 				   chosen_items,
-				   num_chosen_items,
 				   &c->codes[c->codes_index],
 				   &c->codes[c->codes_index ^ 1].lens,
 				   &_os);
@@ -1127,17 +1144,20 @@ static inline struct lzx_item *
 lzx_declare_item_list(struct lzx_compressor *c, struct lzx_optimum_node *cur_node,
 		      struct lzx_item *next_item, bool record_items)
 {
+	unsigned litrunlen = 0;
+
+	if (record_items)
+		next_item->match_hdr = 0xFF;
+
 	do {
-		u32 len = cur_node->item & OPTIMUM_LEN_MASK;
-		u32 offset_data = cur_node->item >> OPTIMUM_OFFSET_SHIFT;
+		const u32 len = cur_node->item & OPTIMUM_LEN_MASK;
+		const u32 offset_data = cur_node->item >> OPTIMUM_OFFSET_SHIFT;
 
 		if (len == 1) {
-			unsigned literal = offset_data;
-			unsigned main_symbol = lzx_main_symbol_for_literal(literal);
-
-			c->freqs.main[main_symbol]++;
+			c->freqs.main[offset_data]++;
 			if (record_items)
-				next_item->main_symbol = main_symbol;
+				litrunlen++;
+			cur_node--;
 		} else {
 			unsigned len_header;
 			unsigned offset_slot;
@@ -1147,9 +1167,12 @@ lzx_declare_item_list(struct lzx_compressor *c, struct lzx_optimum_node *cur_nod
 			offset_slot = lzx_get_offset_slot_fast(c, offset_data);
 
 			if (record_items) {
+				next_item->litrunlen = litrunlen;
+				next_item--;
 				next_item->adjusted_length = len_header;
 				next_item->adjusted_offset = offset_data;
 				next_item->offset_slot = offset_slot;
+				litrunlen = 0;
 			}
 
 			if (len_header >= LZX_NUM_PRIMARY_LENS) {
@@ -1160,14 +1183,16 @@ lzx_declare_item_list(struct lzx_compressor *c, struct lzx_optimum_node *cur_nod
 			main_symbol = lzx_main_symbol_for_match(offset_slot, len_header);
 			c->freqs.main[main_symbol]++;
 			if (record_items)
-				next_item->main_symbol = main_symbol;
+				next_item->match_hdr = main_symbol - LZX_NUM_CHARS;
 
 			if (offset_slot >= 8)
 				c->freqs.aligned[offset_data & LZX_ALIGNED_OFFSET_BITMASK]++;
+			cur_node -= len;
 		}
-		cur_node -= len;
-		next_item--;
 	} while (cur_node != c->optimum_nodes);
+
+	if (record_items)
+		next_item->litrunlen = litrunlen;
 
 	return next_item;
 }
@@ -1550,11 +1575,10 @@ lzx_optimize_and_write_block(struct lzx_compressor *c,
 		}
 	} while (--num_passes_remaining);
 
-	chosen_items = 1 + lzx_declare_item_list(c, c->optimum_nodes + block_size,
-						 &c->chosen_items[ARRAY_LEN(c->chosen_items) - 1],
-						 true);
-	lzx_finish_block(c, os, block_size, chosen_items,
-			 &c->chosen_items[ARRAY_LEN(c->chosen_items)] - chosen_items);
+	chosen_items = lzx_declare_item_list(c, c->optimum_nodes + block_size,
+					     &c->chosen_items[ARRAY_LEN(c->chosen_items) - 1],
+					     true);
+	lzx_finish_block(c, os, block_begin, block_size, chosen_items);
 	return new_queue;
 }
 
@@ -1964,8 +1988,8 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 			in_next += skip_len;
 		} while (in_next < in_block_end);
 
-		lzx_finish_block(c, os, in_next - in_block_begin,
-				 c->chosen_items, next_chosen_item - c->chosen_items);
+		lzx_finish_block(c, os, in_block_begin, in_next - in_block_begin,
+				 c->chosen_items);
 	} while (in_next != in_end);
 }
 
