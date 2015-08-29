@@ -1198,13 +1198,15 @@ lzx_tally_item_list(struct lzx_compressor *c, u32 block_size)
 		}
 
 		offset_slot = c->offset_slot_fast[offset_data];
+
+		if (offset_slot >= 8)
+			c->freqs.aligned[offset_data & LZX_ALIGNED_OFFSET_BITMASK]++;
+
 		main_symbol |= offset_slot << 3;
 		main_symbol |= 256;
 
 		c->freqs.main[main_symbol]++;
 
-		if (offset_slot >= 8)
-			c->freqs.aligned[offset_data & LZX_ALIGNED_OFFSET_BITMASK]++;
 	}
 }
 
@@ -1242,11 +1244,14 @@ lzx_record_item_list(struct lzx_compressor *c, u32 block_size)
 		offset_slot = c->offset_slot_fast[offset_data];
 
 		c->chosen_items[item_idx].litrunlen = litrunlen;
-		item_idx--;
-		c->chosen_items[item_idx].adjusted_length = main_symbol;
-		c->chosen_items[item_idx].offset_slot_and_adjusted_offset =
+		c->chosen_items[item_idx - 1].adjusted_length = main_symbol;
+		c->chosen_items[item_idx - 1].offset_slot_and_adjusted_offset =
 			(offset_data << 8) | offset_slot;
+		item_idx--;
 		litrunlen = 0;
+
+		if (offset_slot >= 8)
+			c->freqs.aligned[offset_data & LZX_ALIGNED_OFFSET_BITMASK]++;
 
 		if (main_symbol >= LZX_NUM_PRIMARY_LENS) {
 			c->freqs.len[main_symbol - LZX_NUM_PRIMARY_LENS]++;
@@ -1257,8 +1262,6 @@ lzx_record_item_list(struct lzx_compressor *c, u32 block_size)
 		c->freqs.main[256 | main_symbol]++;
 		c->chosen_items[item_idx].match_hdr = main_symbol;
 
-		if (offset_slot >= 8)
-			c->freqs.aligned[offset_data & LZX_ALIGNED_OFFSET_BITMASK]++;
 	}
 
 out:
