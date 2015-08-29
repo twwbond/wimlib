@@ -797,8 +797,11 @@ lzx_write_compressed_code(struct lzx_output_bitstream *os,
 }
 
 static void
-lzx_write_items_impl(struct lzx_output_bitstream *os, int block_type, const u8 *block_data,
-		     const struct lzx_item *item, const struct lzx_codes *codes)
+lzx_write_items_impl(struct lzx_output_bitstream * restrict os,
+		     int block_type,
+		     const u8 * restrict block_data,
+		     const struct lzx_item * restrict item,
+		     const struct lzx_codes * restrict codes)
 {
 	for (;;) {
 		unsigned litrunlen = item->litrunlen;
