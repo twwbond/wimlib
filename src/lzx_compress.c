@@ -1610,14 +1610,15 @@ lzx_update_costs(struct lzx_compressor *c)
 }
 
 static struct lzx_lru_queue
-lzx_optimize_and_write_block(struct lzx_compressor *c,
-			     struct lzx_output_bitstream *os,
-			     const u8 *block_begin, const u32 block_size,
+lzx_optimize_and_write_block(struct lzx_compressor * const restrict c,
+			     struct lzx_output_bitstream * const restrict os,
+			     const u8 * const restrict block_begin,
+			     const u32 block_size,
 			     const struct lzx_lru_queue initial_queue)
 {
 	unsigned num_passes_remaining = c->num_optim_passes;
-	u32 item_idx;
 	struct lzx_lru_queue new_queue;
+	u32 item_idx;
 
 	/* The first optimization pass uses a default cost model.  Each
 	 * additional optimization pass uses a cost model derived from the
@@ -1625,17 +1626,16 @@ lzx_optimize_and_write_block(struct lzx_compressor *c,
 
 	lzx_set_default_costs(c, block_begin, block_size);
 	lzx_reset_symbol_frequencies(c);
-	do {
-		new_queue = lzx_find_min_cost_path(c, block_begin, block_size,
-						   initial_queue);
-		if (num_passes_remaining > 1) {
-			lzx_tally_item_list(c, block_size);
-			lzx_make_huffman_codes(c);
-			lzx_update_costs(c);
-			lzx_reset_symbol_frequencies(c);
-		}
-	} while (--num_passes_remaining);
-
+	while (--num_passes_remaining) {
+		new_queue = lzx_find_min_cost_path(c, block_begin,
+						   block_size, initial_queue);
+		lzx_tally_item_list(c, block_size);
+		lzx_make_huffman_codes(c);
+		lzx_update_costs(c);
+		lzx_reset_symbol_frequencies(c);
+	}
+	new_queue = lzx_find_min_cost_path(c, block_begin,
+					   block_size, initial_queue);
 	item_idx = lzx_record_item_list(c, block_size);
 	lzx_finish_block(c, os, block_begin, block_size, item_idx);
 	return new_queue;
