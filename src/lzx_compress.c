@@ -1133,42 +1133,6 @@ lzx_declare_explicit_offset_match(struct lzx_compressor *c, unsigned len, u32 of
 	}
 }
 
-
-/* Tally, and optionally record, the specified match or literal.  */
-static inline void
-lzx_declare_item(struct lzx_compressor *c, u32 item,
-		 struct lzx_item **next_chosen_item)
-{
-}
-
-static inline void
-lzx_record_item_list(struct lzx_compressor *c,
-		     struct lzx_optimum_node *cur_node,
-		     struct lzx_item **next_chosen_item)
-{
-	struct lzx_optimum_node *end_node;
-	u32 saved_item;
-	u32 item;
-
-	/* The list is currently in reverse order (last item to first item).
-	 * Reverse it.  */
-	end_node = cur_node;
-	saved_item = cur_node->item;
-	do {
-		item = saved_item;
-		cur_node -= item & OPTIMUM_LEN_MASK;
-		saved_item = cur_node->item;
-		cur_node->item = item;
-	} while (cur_node != c->optimum_nodes);
-
-	/* Walk the list of items from beginning to end, tallying and recording
-	 * each item.  */
-	do {
-		lzx_declare_item(c, cur_node->item, next_chosen_item);
-		cur_node += (cur_node->item) & OPTIMUM_LEN_MASK;
-	} while (cur_node != end_node);
-}
-
 static inline struct lzx_item *
 lzx_declare_item_list(struct lzx_compressor *c, struct lzx_optimum_node *cur_node,
 		      struct lzx_item *next_item, bool record_items)
