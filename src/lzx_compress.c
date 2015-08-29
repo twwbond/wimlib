@@ -1185,67 +1185,55 @@ lzx_declare_item_list(struct lzx_compressor *c, struct lzx_optimum_node *cur_nod
 			c->freqs.main[main_symbol]++;
 			if (record_items)
 				item_data = main_symbol;
-		} else if (offset_data < LZX_NUM_RECENT_OFFSETS) {
-			unsigned len_header;
-			unsigned len_symbol;
-			unsigned main_symbol;
-			unsigned rep_index = offset_data;
-
-			if (len - LZX_MIN_MATCH_LEN < LZX_NUM_PRIMARY_LENS) {
-				len_header = len - LZX_MIN_MATCH_LEN;
-				len_symbol = LZX_LENCODE_NUM_SYMBOLS;
-			} else {
-				len_header = LZX_NUM_PRIMARY_LENS;
-				len_symbol = len - LZX_MIN_MATCH_LEN - LZX_NUM_PRIMARY_LENS;
-				c->freqs.len[len_symbol]++;
-			}
-
-			main_symbol = lzx_main_symbol_for_match(rep_index, len_header);
-
-			c->freqs.main[main_symbol]++;
-
-			if (record_items)
-				item_data = (u64)main_symbol | ((u64)len_symbol << 10);
 		} else {
-			u32 offset = offset_data - LZX_OFFSET_ADJUSTMENT;
-			unsigned len_header;
-			unsigned len_symbol;
 			unsigned main_symbol;
 			unsigned offset_slot;
-			unsigned num_extra_bits;
-			u32 extra_bits;
+			unsigned len_header = len - LZX_MIN_MATCH_LEN;;
 
-			if (len - LZX_MIN_MATCH_LEN < LZX_NUM_PRIMARY_LENS) {
-				len_header = len - LZX_MIN_MATCH_LEN;
-				len_symbol = LZX_LENCODE_NUM_SYMBOLS;
+			item_data = 0;
+
+			if (len_header < LZX_NUM_PRIMARY_LENS) {
+				if (record_items)
+					item_data |= LZX_LENCODE_NUM_SYMBOLS << 10;
 			} else {
+				unsigned len_symbol;
+
+				len_symbol = len_header - LZX_NUM_PRIMARY_LENS;
 				len_header = LZX_NUM_PRIMARY_LENS;
-				len_symbol = len - LZX_MIN_MATCH_LEN - LZX_NUM_PRIMARY_LENS;
 				c->freqs.len[len_symbol]++;
+				if (record_items)
+					item_data |= len_symbol << 10;
 			}
 
-			offset_slot = lzx_get_offset_slot_fast(c, offset);
+			if (offset_data < LZX_NUM_RECENT_OFFSETS) {
+				offset_slot = offset_data;
+				main_symbol = lzx_main_symbol_for_match(offset_slot, len_header);
+				c->freqs.main[main_symbol]++;
+				if (record_items)
+					item_data |= main_symbol;
+			} else {
+				unsigned num_extra_bits;
+				u32 extra_bits;
 
-			main_symbol = lzx_main_symbol_for_match(offset_slot, len_header);
+				offset_slot = lzx_get_offset_slot_fast(c, offset_data - LZX_OFFSET_ADJUSTMENT);
+				main_symbol = lzx_main_symbol_for_match(offset_slot, len_header);
+				c->freqs.main[main_symbol]++;
+				if (record_items)
+					item_data |= main_symbol;
 
-			c->freqs.main[main_symbol]++;
+				num_extra_bits = lzx_extra_offset_bits[offset_slot];
 
-			num_extra_bits = lzx_extra_offset_bits[offset_slot];
+				if (num_extra_bits >= LZX_NUM_ALIGNED_OFFSET_BITS)
+					c->freqs.aligned[offset_data & LZX_ALIGNED_OFFSET_BITMASK]++;
 
-			if (num_extra_bits >= LZX_NUM_ALIGNED_OFFSET_BITS)
-				c->freqs.aligned[(offset + LZX_OFFSET_ADJUSTMENT) &
-						 LZX_ALIGNED_OFFSET_BITMASK]++;
+				if (record_items) {
+					extra_bits = offset_data - lzx_offset_slot_base[offset_slot];
 
-			if (record_items) {
-				extra_bits = (offset + LZX_OFFSET_ADJUSTMENT) -
-					     lzx_offset_slot_base[offset_slot];
-
-				BUILD_BUG_ON(LZX_MAINCODE_MAX_NUM_SYMBOLS > (1 << 10));
-				BUILD_BUG_ON(LZX_LENCODE_NUM_SYMBOLS > (1 << 8));
-				item_data = (u64)main_symbol |
-					    ((u64)len_symbol << 10) |
-					    ((u64)num_extra_bits << 18) |
-					    ((u64)extra_bits << 23);
+					BUILD_BUG_ON(LZX_MAINCODE_MAX_NUM_SYMBOLS > (1 << 10));
+					BUILD_BUG_ON(LZX_LENCODE_NUM_SYMBOLS > (1 << 8));
+					item_data |= num_extra_bits << 18;
+					item_data |= (u64)extra_bits << 23;
+				}
 			}
 		}
 
