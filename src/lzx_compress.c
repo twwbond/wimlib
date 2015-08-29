@@ -1006,7 +1006,8 @@ lzx_choose_verbatim_or_aligned(const struct lzx_freqs * freqs,
  */
 static void
 lzx_finish_block(struct lzx_compressor *c, struct lzx_output_bitstream *os,
-		 u32 block_size, u32 num_chosen_items)
+		 u32 block_size, struct lzx_item *chosen_items,
+		 u32 num_chosen_items)
 {
 	struct lzx_output_bitstream _os = *os;
 	int block_type;
@@ -1019,7 +1020,7 @@ lzx_finish_block(struct lzx_compressor *c, struct lzx_output_bitstream *os,
 				   block_size,
 				   c->window_order,
 				   c->num_main_syms,
-				   c->chosen_items,
+				   chosen_items,
 				   num_chosen_items,
 				   &c->codes[c->codes_index],
 				   &c->codes[c->codes_index ^ 1].lens,
@@ -1138,18 +1139,6 @@ static inline void
 lzx_declare_item(struct lzx_compressor *c, u32 item,
 		 struct lzx_item **next_chosen_item)
 {
-	u32 len = item & OPTIMUM_LEN_MASK;
-	u32 offset_data = item >> OPTIMUM_OFFSET_SHIFT;
-
-	if (len == 1)
-		lzx_declare_literal(c, offset_data, next_chosen_item);
-	else if (offset_data < LZX_NUM_RECENT_OFFSETS)
-		lzx_declare_repeat_offset_match(c, len, offset_data,
-						next_chosen_item);
-	else
-		lzx_declare_explicit_offset_match(c, len,
-						  offset_data - LZX_OFFSET_ADJUSTMENT,
-						  next_chosen_item);
 }
 
 static inline void
@@ -1180,15 +1169,100 @@ lzx_record_item_list(struct lzx_compressor *c,
 	} while (cur_node != end_node);
 }
 
-static inline void
-lzx_tally_item_list(struct lzx_compressor *c, struct lzx_optimum_node *cur_node)
+static inline struct lzx_item *
+lzx_declare_item_list(struct lzx_compressor *c, struct lzx_optimum_node *cur_node,
+		      struct lzx_item *next_item, bool record_items)
 {
-	/* Since we're just tallying the items, we don't need to reverse the
-	 * list.  Processing the items in reverse order is fine.  */
 	do {
-		lzx_declare_item(c, cur_node->item, NULL);
-		cur_node -= (cur_node->item & OPTIMUM_LEN_MASK);
+		u32 len = cur_node->item & OPTIMUM_LEN_MASK;
+		u32 offset_data = cur_node->item >> OPTIMUM_OFFSET_SHIFT;
+
+		if (len == 1) {
+			unsigned literal = offset_data;
+			unsigned main_symbol = lzx_main_symbol_for_literal(literal);
+
+			c->freqs.main[main_symbol]++;
+
+			if (record_items) {
+				*--next_item = (struct lzx_item) {
+					.data = main_symbol,
+				};
+			};
+		} else if (offset_data < LZX_NUM_RECENT_OFFSETS) {
+			unsigned len_header;
+			unsigned len_symbol;
+			unsigned main_symbol;
+			unsigned rep_index = offset_data;
+
+			if (len - LZX_MIN_MATCH_LEN < LZX_NUM_PRIMARY_LENS) {
+				len_header = len - LZX_MIN_MATCH_LEN;
+				len_symbol = LZX_LENCODE_NUM_SYMBOLS;
+			} else {
+				len_header = LZX_NUM_PRIMARY_LENS;
+				len_symbol = len - LZX_MIN_MATCH_LEN - LZX_NUM_PRIMARY_LENS;
+				c->freqs.len[len_symbol]++;
+			}
+
+			main_symbol = lzx_main_symbol_for_match(rep_index, len_header);
+
+			c->freqs.main[main_symbol]++;
+
+			if (record_items) {
+				*--next_item = (struct lzx_item) {
+					.data = (u64)main_symbol | ((u64)len_symbol << 10),
+				};
+			}
+		} else {
+			u32 offset = offset_data - LZX_OFFSET_ADJUSTMENT;
+			unsigned len_header;
+			unsigned len_symbol;
+			unsigned main_symbol;
+			unsigned offset_slot;
+			unsigned num_extra_bits;
+			u32 extra_bits;
+
+			if (len - LZX_MIN_MATCH_LEN < LZX_NUM_PRIMARY_LENS) {
+				len_header = len - LZX_MIN_MATCH_LEN;
+				len_symbol = LZX_LENCODE_NUM_SYMBOLS;
+			} else {
+				len_header = LZX_NUM_PRIMARY_LENS;
+				len_symbol = len - LZX_MIN_MATCH_LEN - LZX_NUM_PRIMARY_LENS;
+				c->freqs.len[len_symbol]++;
+			}
+
+			offset_slot = lzx_get_offset_slot_fast(c, offset);
+
+			main_symbol = lzx_main_symbol_for_match(offset_slot, len_header);
+
+			c->freqs.main[main_symbol]++;
+
+			num_extra_bits = lzx_extra_offset_bits[offset_slot];
+
+			if (num_extra_bits >= LZX_NUM_ALIGNED_OFFSET_BITS)
+				c->freqs.aligned[(offset + LZX_OFFSET_ADJUSTMENT) &
+						 LZX_ALIGNED_OFFSET_BITMASK]++;
+
+			if (record_items) {
+
+				extra_bits = (offset + LZX_OFFSET_ADJUSTMENT) -
+					     lzx_offset_slot_base[offset_slot];
+
+				BUILD_BUG_ON(LZX_MAINCODE_MAX_NUM_SYMBOLS > (1 << 10));
+				BUILD_BUG_ON(LZX_LENCODE_NUM_SYMBOLS > (1 << 8));
+				*--next_item = (struct lzx_item) {
+					.data = (u64)main_symbol |
+						((u64)len_symbol << 10) |
+						((u64)num_extra_bits << 18) |
+						((u64)extra_bits << 23),
+				};
+			}
+		}
+
+		cur_node -= len;
+
 	} while (cur_node != c->optimum_nodes);
+
+	return next_item;
 }
 
 /*
@@ -1549,7 +1623,7 @@ lzx_optimize_and_write_block(struct lzx_compressor *c,
 			     const struct lzx_lru_queue initial_queue)
 {
 	unsigned num_passes_remaining = c->num_optim_passes;
-	struct lzx_item *next_chosen_item;
+	struct lzx_item *chosen_items;
 	struct lzx_lru_queue new_queue;
 
 	/* The first optimization pass uses a default cost model.  Each
@@ -1562,16 +1636,18 @@ lzx_optimize_and_write_block(struct lzx_compressor *c,
 		new_queue = lzx_find_min_cost_path(c, block_begin, block_size,
 						   initial_queue);
 		if (num_passes_remaining > 1) {
-			lzx_tally_item_list(c, c->optimum_nodes + block_size);
+			lzx_declare_item_list(c, c->optimum_nodes + block_size, NULL, false);
 			lzx_make_huffman_codes(c);
 			lzx_update_costs(c);
 			lzx_reset_symbol_frequencies(c);
 		}
 	} while (--num_passes_remaining);
 
-	next_chosen_item = c->chosen_items;
-	lzx_record_item_list(c, c->optimum_nodes + block_size, &next_chosen_item);
-	lzx_finish_block(c, os, block_size, next_chosen_item - c->chosen_items);
+	chosen_items = lzx_declare_item_list(c, c->optimum_nodes + block_size,
+					     &c->chosen_items[ARRAY_LEN(c->chosen_items)],
+					     true);
+	lzx_finish_block(c, os, block_size, chosen_items,
+			 &c->chosen_items[ARRAY_LEN(c->chosen_items)] - chosen_items);
 	return new_queue;
 }
 
@@ -1982,7 +2058,7 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 		} while (in_next < in_block_end);
 
 		lzx_finish_block(c, os, in_next - in_block_begin,
-				 next_chosen_item - c->chosen_items);
+				 c->chosen_items, next_chosen_item - c->chosen_items);
 	} while (in_next != in_end);
 }
 
