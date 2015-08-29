@@ -484,7 +484,7 @@ struct lzx_compressor {
 struct lzx_output_bitstream {
 
 	/* Bits that haven't yet been written to the output buffer.  */
-	u32 bitbuf;
+	machine_word_t bitbuf;
 
 	/* Number of bits currently held in @bitbuf.  */
 	u32 bitcount;
@@ -500,6 +500,8 @@ struct lzx_output_bitstream {
 	 * 2-byte boundary.  */
 	u8 *end;
 };
+
+#define BITBUF_NBITS (8 * sizeof(machine_word_t))
 
 /*
  * Initialize the output bitstream.
@@ -521,68 +523,45 @@ lzx_init_output(struct lzx_output_bitstream *os, void *buffer, size_t size)
 	os->end = os->start + (size & ~1);
 }
 
-/*
- * Write some bits to the output bitstream.
- *
- * The bits are given by the low-order @num_bits bits of @bits.  Higher-order
- * bits in @bits cannot be set.  At most 17 bits can be written at once.
- *
- * @max_num_bits is a compile-time constant that specifies the maximum number of
- * bits that can ever be written at the call site.  It is used to optimize away
- * the conditional code for writing a second 16-bit coding unit when writing
- * fewer than 17 bits.
- *
- * If the output buffer space is exhausted, then the bits will be ignored, and
- * lzx_flush_output() will return 0 when it gets called.
- */
+#define CAN_BUFFER(n) ((n) < BITBUF_NBITS - 16)
+
 static inline void
-lzx_write_varbits(struct lzx_output_bitstream *os,
-		  const u32 bits, const unsigned num_bits,
-		  const unsigned max_num_bits)
+lzx_flush_bits_impl(struct lzx_output_bitstream *os, int level)
 {
-	/* This code is optimized for LZX, which never needs to write more than
-	 * 17 bits at once.  */
-	LZX_ASSERT(num_bits <= 17);
-	LZX_ASSERT(num_bits <= max_num_bits);
-	LZX_ASSERT(os->bitcount <= 15);
-
-	/* Add the bits to the bit buffer variable.  @bitcount will be at most
-	 * 15, so there will be just enough space for the maximum possible
-	 * @num_bits of 17.  */
-	os->bitcount += num_bits;
-	os->bitbuf = (os->bitbuf << num_bits) | bits;
-
-	/* Check whether any coding units need to be written.  */
-	if (os->bitcount >= 16) {
-
+	if (level >= 1 && os->bitcount >= 16) {
 		os->bitcount -= 16;
-
-		/* Write a coding unit, unless it would overflow the buffer.  */
 		if (os->next != os->end) {
 			put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next);
 			os->next += 2;
 		}
-
-		/* If writing 17 bits, a second coding unit might need to be
-		 * written.  But because 'max_num_bits' is a compile-time
-		 * constant, the compiler will optimize away this code at most
-		 * call sites.  */
-		if (max_num_bits == 17 && os->bitcount == 16) {
+		if (level >= 2 && os->bitcount >= 16) {
+			os->bitcount -= 16;
 			if (os->next != os->end) {
-				put_unaligned_u16_le(os->bitbuf, os->next);
+				put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next);
 				os->next += 2;
 			}
-			os->bitcount = 0;
+			if (level >= 3 && os->bitcount >= 16) {
+				os->bitcount -= 16;
+				if (os->next != os->end) {
+					put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next);
+					os->next += 2;
+				}
+			}
 		}
 	}
 }
 
-/* Use when @num_bits is a compile-time constant.  Otherwise use
- * lzx_write_varbits().  */
 static inline void
-lzx_write_bits(struct lzx_output_bitstream *os, u32 bits, unsigned num_bits)
+lzx_flush_bits(struct lzx_output_bitstream *os)
 {
-	lzx_write_varbits(os, bits, num_bits, num_bits);
+	lzx_flush_bits_impl(os, 3);
+}
+
+static inline void
+lzx_add_bits(struct lzx_output_bitstream *os, u32 bits, unsigned num_bits)
+{
+	os->bitcount += num_bits;
+	os->bitbuf = (os->bitbuf << num_bits) | bits;
 }
 
 /*
@@ -592,6 +571,8 @@ lzx_write_bits(struct lzx_output_bitstream *os, u32 bits, unsigned num_bits)
 static u32
 lzx_flush_output(struct lzx_output_bitstream *os)
 {
+	lzx_flush_bits(os);
+
 	if (os->next == os->end)
 		return 0;
 
@@ -790,29 +771,30 @@ lzx_write_compressed_code(struct lzx_output_bitstream *os,
 				    precode_codewords);
 
 	/* Output the lengths of the codewords in the precode.  */
-	for (i = 0; i < LZX_PRECODE_NUM_SYMBOLS; i++)
-		lzx_write_bits(os, precode_lens[i], LZX_PRECODE_ELEMENT_SIZE);
+	for (i = 0; i < LZX_PRECODE_NUM_SYMBOLS; i++) {
+		lzx_add_bits(os, precode_lens[i], LZX_PRECODE_ELEMENT_SIZE);
+		lzx_flush_bits(os);
+	}
 
 	/* Output the encoded lengths of the codewords in the larger code.  */
 	for (i = 0; i < num_precode_items; i++) {
 		precode_item = precode_items[i];
 		precode_sym = precode_item & 0x1F;
-		lzx_write_varbits(os, precode_codewords[precode_sym],
-				  precode_lens[precode_sym],
-				  LZX_MAX_PRE_CODEWORD_LEN);
+		lzx_add_bits(os, precode_codewords[precode_sym],
+			     precode_lens[precode_sym]);
 		if (precode_sym >= 17) {
 			if (precode_sym == 17) {
-				lzx_write_bits(os, precode_item >> 5, 4);
+				lzx_add_bits(os, precode_item >> 5, 4);
 			} else if (precode_sym == 18) {
-				lzx_write_bits(os, precode_item >> 5, 5);
+				lzx_add_bits(os, precode_item >> 5, 5);
 			} else {
-				lzx_write_bits(os, (precode_item >> 5) & 1, 1);
+				lzx_add_bits(os, (precode_item >> 5) & 1, 1);
 				precode_sym = precode_item >> 6;
-				lzx_write_varbits(os, precode_codewords[precode_sym],
-						  precode_lens[precode_sym],
-						  LZX_MAX_PRE_CODEWORD_LEN);
+				lzx_add_bits(os, precode_codewords[precode_sym],
+					     precode_lens[precode_sym]);
 			}
 		}
+		lzx_flush_bits(os);
 	}
 }
 
@@ -829,19 +811,19 @@ lzx_write_item(struct lzx_output_bitstream *os, struct lzx_item item,
 
 	main_symbol = data & 0x3FF;
 
-	lzx_write_varbits(os, codes->codewords.main[main_symbol],
-			  codes->lens.main[main_symbol],
-			  LZX_MAX_MAIN_CODEWORD_LEN);
+	lzx_add_bits(os, codes->codewords.main[main_symbol],
+		     codes->lens.main[main_symbol]);
+	lzx_flush_bits_impl(os, 1);
 
-	if (main_symbol < LZX_NUM_CHARS)  /* Literal?  */
+	if (main_symbol < LZX_NUM_CHARS) { /* Literal?  */
 		return;
+	}
 
 	len_symbol = (data >> 10) & 0xFF;
 
 	if (len_symbol != LZX_LENCODE_NUM_SYMBOLS) {
-		lzx_write_varbits(os, codes->codewords.len[len_symbol],
-				  codes->lens.len[len_symbol],
-				  LZX_MAX_LEN_CODEWORD_LEN);
+		lzx_add_bits(os, codes->codewords.len[len_symbol],
+			     codes->lens.len[len_symbol]);
 	}
 
 	num_extra_bits = (data >> 18) & 0x1F;
@@ -856,19 +838,19 @@ lzx_write_item(struct lzx_output_bitstream *os, struct lzx_item item,
 		 * bits are Huffman-encoded using the aligned offset code.  The
 		 * remaining bits are output literally.  */
 
-		lzx_write_varbits(os, extra_bits >> LZX_NUM_ALIGNED_OFFSET_BITS,
-				  num_extra_bits - LZX_NUM_ALIGNED_OFFSET_BITS,
-				  17 - LZX_NUM_ALIGNED_OFFSET_BITS);
+		lzx_add_bits(os, extra_bits >> LZX_NUM_ALIGNED_OFFSET_BITS,
+				num_extra_bits - LZX_NUM_ALIGNED_OFFSET_BITS);
 
-		lzx_write_varbits(os,
-				  codes->codewords.aligned[extra_bits & LZX_ALIGNED_OFFSET_BITMASK],
-				  codes->lens.aligned[extra_bits & LZX_ALIGNED_OFFSET_BITMASK],
-				  LZX_MAX_ALIGNED_CODEWORD_LEN);
+		lzx_add_bits(os,
+			     codes->codewords.aligned[extra_bits & LZX_ALIGNED_OFFSET_BITMASK],
+			     codes->lens.aligned[extra_bits & LZX_ALIGNED_OFFSET_BITMASK]);
 	} else {
 		/* Verbatim blocks, or fewer than 3 extra bits:  All extra
 		 * offset bits are output literally.  */
-		lzx_write_varbits(os, extra_bits, num_extra_bits, 17);
+		lzx_add_bits(os, extra_bits, num_extra_bits);
 	}
+
+	lzx_flush_bits(os);
 }
 
 /*
@@ -919,7 +901,7 @@ lzx_write_compressed_block(int block_type,
 
 	/* The first three bits indicate the type of block and are one of the
 	 * LZX_BLOCKTYPE_* constants.  */
-	lzx_write_bits(os, block_type, 3);
+	lzx_add_bits(os, block_type, 3);
 
 	/* Output the block size.
 	 *
@@ -937,22 +919,24 @@ lzx_write_compressed_block(int block_type,
 	 * because WIMs created with chunk size greater than 32768 can seemingly
 	 * only be opened by wimlib anyway.  */
 	if (block_size == LZX_DEFAULT_BLOCK_SIZE) {
-		lzx_write_bits(os, 1, 1);
+		lzx_add_bits(os, 1, 1);
 	} else {
-		lzx_write_bits(os, 0, 1);
+		lzx_add_bits(os, 0, 1);
 
 		if (window_order >= 16)
-			lzx_write_bits(os, block_size >> 16, 8);
+			lzx_add_bits(os, block_size >> 16, 8);
 
-		lzx_write_bits(os, block_size & 0xFFFF, 16);
+		lzx_add_bits(os, block_size & 0xFFFF, 16);
 	}
+	lzx_flush_bits(os);
 
 	/* If it's an aligned offset block, output the aligned offset code.  */
 	if (block_type == LZX_BLOCKTYPE_ALIGNED) {
 		for (int i = 0; i < LZX_ALIGNEDCODE_NUM_SYMBOLS; i++) {
-			lzx_write_bits(os, codes->lens.aligned[i],
-				       LZX_ALIGNEDCODE_ELEMENT_SIZE);
+			lzx_add_bits(os, codes->lens.aligned[i],
+				     LZX_ALIGNEDCODE_ELEMENT_SIZE);
 		}
+		lzx_flush_bits(os);
 	}
 
 	/* Output the main code (two parts).  */
