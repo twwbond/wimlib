@@ -1063,15 +1063,6 @@ lzx_finish_block(struct lzx_compressor *c, struct lzx_output_bitstream *os,
 	*os = _os;
 }
 
-/* Return the offset slot for the specified offset, which must be
- * less than LZX_NUM_FAST_OFFSETS.  */
-static inline unsigned
-lzx_get_offset_slot_fast(struct lzx_compressor *c, u32 adjusted_offset)
-{
-	LZX_ASSERT(offset < LZX_NUM_FAST_OFFSETS);
-	return c->offset_slot_fast[adjusted_offset];
-}
-
 /* Tally, and optionally record, the specified literal byte.  */
 static inline void
 lzx_declare_literal(struct lzx_compressor *c, unsigned literal,
@@ -1192,7 +1183,7 @@ lzx_tally_item_list(struct lzx_compressor *c, u32 block_size)
 			unsigned main_symbol;
 
 			len_header = len - LZX_MIN_MATCH_LEN;;
-			offset_slot = lzx_get_offset_slot_fast(c, offset_data);
+			offset_slot = c->offset_slot_fast[offset_data];
 
 			if (len_header >= LZX_NUM_PRIMARY_LENS) {
 				c->freqs.len[len_header - LZX_NUM_PRIMARY_LENS]++;
@@ -1232,7 +1223,7 @@ lzx_record_item_list(struct lzx_compressor *c, u32 block_size)
 			unsigned main_symbol;
 
 			len_header = len - LZX_MIN_MATCH_LEN;;
-			offset_slot = lzx_get_offset_slot_fast(c, offset_data);
+			offset_slot = c->offset_slot_fast[offset_data];
 
 			c->chosen_items[item_idx].litrunlen = litrunlen;
 			item_idx--;
@@ -1445,7 +1436,7 @@ lzx_find_min_cost_path(struct lzx_compressor * const restrict c,
 			do {
 				u32 offset = cache_ptr->offset;
 				u32 offset_data = offset + LZX_OFFSET_ADJUSTMENT;
-				unsigned offset_slot = lzx_get_offset_slot_fast(c, offset_data);
+				unsigned offset_slot = c->offset_slot_fast[offset_data];
 				do {
 					u32 cost = cur_node->cost +
 						   c->costs.match_cost[offset_slot][
