@@ -1169,35 +1169,42 @@ lzx_declare_explicit_offset_match(struct lzx_compressor *c, unsigned len, u32 of
 static void
 lzx_tally_item_list(struct lzx_compressor *c, u32 block_size)
 {
-	struct lzx_optimum_node *cur_node = &c->optimum_nodes[block_size];
-	do {
-		const u32 len = cur_node->item & OPTIMUM_LEN_MASK;
-		const u32 offset_data = cur_node->item >> OPTIMUM_OFFSET_SHIFT;
+	u32 node_idx = block_size;
+	u32 len;
+	u32 offset_data;
+	for (;;) {
 
-		if (len == 1) {
+		for (;;) {
+			len = c->optimum_nodes[node_idx].item & OPTIMUM_LEN_MASK;
+			offset_data = c->optimum_nodes[node_idx].item >> OPTIMUM_OFFSET_SHIFT;
+
+			if (len != 0)
+				break;
 			c->freqs.main[offset_data]++;
-			cur_node--;
-		} else {
-			unsigned len_header;
-			unsigned offset_slot;
-			unsigned main_symbol;
-
-			len_header = len - LZX_MIN_MATCH_LEN;;
-			offset_slot = c->offset_slot_fast[offset_data];
-
-			if (len_header >= LZX_NUM_PRIMARY_LENS) {
-				c->freqs.len[len_header - LZX_NUM_PRIMARY_LENS]++;
-				len_header = LZX_NUM_PRIMARY_LENS;
-			}
-
-			main_symbol = lzx_main_symbol_for_match(offset_slot, len_header);
-			c->freqs.main[main_symbol]++;
-
-			if (offset_slot >= 8)
-				c->freqs.aligned[offset_data & LZX_ALIGNED_OFFSET_BITMASK]++;
-			cur_node -= len;
+			if (!--node_idx)
+				return;
 		}
-	} while (cur_node != c->optimum_nodes);
+
+		unsigned len_header;
+		unsigned offset_slot;
+		unsigned main_symbol;
+
+		node_idx -= len;
+
+		len_header = len - LZX_MIN_MATCH_LEN;;
+		offset_slot = c->offset_slot_fast[offset_data];
+
+		if (len_header >= LZX_NUM_PRIMARY_LENS) {
+			c->freqs.len[len_header - LZX_NUM_PRIMARY_LENS]++;
+			len_header = LZX_NUM_PRIMARY_LENS;
+		}
+
+		main_symbol = lzx_main_symbol_for_match(offset_slot, len_header);
+		c->freqs.main[main_symbol]++;
+
+		if (offset_slot >= 8)
+			c->freqs.aligned[offset_data & LZX_ALIGNED_OFFSET_BITMASK]++;
+	}
 }
 
 static struct lzx_item *
@@ -1209,44 +1216,52 @@ lzx_record_item_list(struct lzx_compressor *c, u32 block_size)
 
 	c->chosen_items[item_idx].match_hdr = 0xFF;
 
-	do {
-		const u32 len = c->optimum_nodes[node_idx].item & OPTIMUM_LEN_MASK;
-		const u32 offset_data = c->optimum_nodes[node_idx].item >> OPTIMUM_OFFSET_SHIFT;
+	u32 len;
+	u32 offset_data;
+	for (;;) {
 
-		if (len == 1) {
+		for (;;) {
+			len = c->optimum_nodes[node_idx].item & OPTIMUM_LEN_MASK;
+			offset_data = c->optimum_nodes[node_idx].item >> OPTIMUM_OFFSET_SHIFT;
+
+			if (len != 0)
+				break;
 			c->freqs.main[offset_data]++;
 			litrunlen++;
-			node_idx--;
-		} else {
-			unsigned len_header;
-			unsigned offset_slot;
-			unsigned main_symbol;
-
-			len_header = len - LZX_MIN_MATCH_LEN;;
-			offset_slot = c->offset_slot_fast[offset_data];
-
-			c->chosen_items[item_idx].litrunlen = litrunlen;
-			item_idx--;
-			c->chosen_items[item_idx].adjusted_length = len_header;
-			c->chosen_items[item_idx].offset_slot_and_adjusted_offset =
-				(offset_data << 8) | offset_slot;
-			litrunlen = 0;
-
-			if (len_header >= LZX_NUM_PRIMARY_LENS) {
-				c->freqs.len[len_header - LZX_NUM_PRIMARY_LENS]++;
-				len_header = LZX_NUM_PRIMARY_LENS;
-			}
-
-			main_symbol = lzx_main_symbol_for_match(offset_slot, len_header);
-			c->freqs.main[main_symbol]++;
-			c->chosen_items[item_idx].match_hdr = main_symbol - LZX_NUM_CHARS;
-
-			if (offset_slot >= 8)
-				c->freqs.aligned[offset_data & LZX_ALIGNED_OFFSET_BITMASK]++;
-			node_idx -= len;
+			if (--node_idx == 0)
+				goto out;
 		}
-	} while (node_idx != 0);
 
+		unsigned len_header;
+		unsigned offset_slot;
+		unsigned main_symbol;
+
+		node_idx -= len;
+
+		len_header = len - LZX_MIN_MATCH_LEN;;
+		offset_slot = c->offset_slot_fast[offset_data];
+
+		c->chosen_items[item_idx].litrunlen = litrunlen;
+		item_idx--;
+		c->chosen_items[item_idx].adjusted_length = len_header;
+		c->chosen_items[item_idx].offset_slot_and_adjusted_offset =
+			(offset_data << 8) | offset_slot;
+		litrunlen = 0;
+
+		if (len_header >= LZX_NUM_PRIMARY_LENS) {
+			c->freqs.len[len_header - LZX_NUM_PRIMARY_LENS]++;
+			len_header = LZX_NUM_PRIMARY_LENS;
+		}
+
+		main_symbol = lzx_main_symbol_for_match(offset_slot, len_header);
+		c->freqs.main[main_symbol]++;
+		c->chosen_items[item_idx].match_hdr = main_symbol - LZX_NUM_CHARS;
+
+		if (offset_slot >= 8)
+			c->freqs.aligned[offset_data & LZX_ALIGNED_OFFSET_BITMASK]++;
+	}
+
+out:
 	c->chosen_items[item_idx].litrunlen = litrunlen;
 
 	return &c->chosen_items[item_idx];
@@ -1477,7 +1492,7 @@ lzx_find_min_cost_path(struct lzx_compressor * const restrict c,
 		if (cost <= cur_node->cost) {
 			/* Literal: queue remains unchanged.  */
 			cur_node->cost = cost;
-			cur_node->item = (literal << OPTIMUM_OFFSET_SHIFT) | 1;
+			cur_node->item = (literal << OPTIMUM_OFFSET_SHIFT);
 			QUEUE(in_next) = QUEUE(in_next - 1);
 		} else {
 			/* Match: queue update is needed.  */
