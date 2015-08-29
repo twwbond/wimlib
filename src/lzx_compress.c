@@ -203,12 +203,10 @@ struct lzx_freqs {
 
 /* Intermediate LZX match/literal format  */
 struct lzx_item {
-
-	/* Bits 0  -  9: Main symbol
-	 * Bits 10 - 17: Length symbol
-	 * Bits 18 - 22: Number of extra offset bits
-	 * Bits 23+    : Extra offset bits  */
-	u64 data;
+	u16 main_symbol;
+	u8 adjusted_length;
+	u8 offset_slot;
+	u32 adjusted_offset;
 };
 
 /*
@@ -800,16 +798,15 @@ lzx_write_compressed_code(struct lzx_output_bitstream *os,
 
 /* Output a match or literal.  */
 static inline void
-lzx_write_item(struct lzx_output_bitstream *os, struct lzx_item item,
+lzx_write_item(struct lzx_output_bitstream *os, const struct lzx_item *item,
 	       bool aligned, const struct lzx_codes *codes)
 {
-	u64 data = item.data;
-	unsigned main_symbol;
-	unsigned len_symbol;
+	unsigned main_symbol = item->main_symbol;
+	unsigned adjusted_length;
+	u32 adjusted_offset;
+	unsigned offset_slot;
 	unsigned num_extra_bits;
 	u32 extra_bits;
-
-	main_symbol = data & 0x3FF;
 
 	lzx_add_bits(os, codes->codewords.main[main_symbol],
 		     codes->lens.main[main_symbol]);
@@ -819,36 +816,36 @@ lzx_write_item(struct lzx_output_bitstream *os, struct lzx_item item,
 		return;
 	}
 
-	len_symbol = (data >> 10) & 0xFF;
+	adjusted_length = item->adjusted_length;
+	adjusted_offset = item->adjusted_offset;
 
-	if (len_symbol != LZX_LENCODE_NUM_SYMBOLS) {
-		lzx_add_bits(os, codes->codewords.len[len_symbol],
-			     codes->lens.len[len_symbol]);
+	if (adjusted_length >= LZX_NUM_PRIMARY_LENS) {
+		lzx_add_bits(os, codes->codewords.len[adjusted_length - LZX_NUM_PRIMARY_LENS],
+			     codes->lens.len[adjusted_length - LZX_NUM_PRIMARY_LENS]);
 	}
 
-	num_extra_bits = (data >> 18) & 0x1F;
-	if (num_extra_bits) {
-		extra_bits = data >> 23;
+	offset_slot = item->offset_slot;
 
-		if (aligned && num_extra_bits >= LZX_NUM_ALIGNED_OFFSET_BITS) {
+	num_extra_bits = lzx_extra_offset_bits[offset_slot];
+	extra_bits = adjusted_offset - lzx_offset_slot_base[offset_slot];
 
-			/* Aligned offset blocks: The low 3 bits of the extra offset
-			 * bits are Huffman-encoded using the aligned offset code.  The
-			 * remaining bits are output literally.  */
+	if (aligned && offset_slot >= 8) {
 
-			lzx_add_bits(os, extra_bits >> LZX_NUM_ALIGNED_OFFSET_BITS,
-					num_extra_bits - LZX_NUM_ALIGNED_OFFSET_BITS);
+		/* Aligned offset blocks: The low 3 bits of the extra offset
+		 * bits are Huffman-encoded using the aligned offset code.  The
+		 * remaining bits are output literally.  */
 
-			lzx_add_bits(os, codes->codewords.aligned[extra_bits & LZX_ALIGNED_OFFSET_BITMASK],
-				     codes->lens.aligned[extra_bits & LZX_ALIGNED_OFFSET_BITMASK]);
-		} else {
-			/* Verbatim blocks, or fewer than 3 extra bits:  All extra
-			 * offset bits are output literally.  */
-			lzx_add_bits(os, extra_bits, num_extra_bits);
-		}
-		lzx_flush_bits_impl(os, 3);
-	} else
-		lzx_flush_bits_impl(os, 2);
+		lzx_add_bits(os, extra_bits >> LZX_NUM_ALIGNED_OFFSET_BITS,
+				num_extra_bits - LZX_NUM_ALIGNED_OFFSET_BITS);
+
+		lzx_add_bits(os, codes->codewords.aligned[adjusted_offset & LZX_ALIGNED_OFFSET_BITMASK],
+			     codes->lens.aligned[adjusted_offset & LZX_ALIGNED_OFFSET_BITMASK]);
+	} else {
+		/* Verbatim blocks, or fewer than 3 extra bits:  All extra
+		 * offset bits are output literally.  */
+		lzx_add_bits(os, extra_bits, num_extra_bits);
+	}
+	lzx_flush_bits_impl(os, 3);
 }
 
 /*
@@ -876,10 +873,10 @@ lzx_write_items(struct lzx_output_bitstream *os, int block_type,
 {
 	if (block_type == LZX_BLOCKTYPE_ALIGNED) {
 		for (u32 i = 0; i < num_items; i++)
-			lzx_write_item(os, items[i], true, codes);
+			lzx_write_item(os, &items[i], true, codes);
 	} else {
 		for (u32 i = 0; i < num_items; i++)
-			lzx_write_item(os, items[i], false, codes);
+			lzx_write_item(os, &items[i], false, codes);
 	}
 }
 
@@ -1028,6 +1025,8 @@ static inline void
 lzx_declare_literal(struct lzx_compressor *c, unsigned literal,
 		    struct lzx_item **next_chosen_item)
 {
+	return;
+#if 0
 	unsigned main_symbol = lzx_main_symbol_for_literal(literal);
 
 	c->freqs.main[main_symbol]++;
@@ -1037,6 +1036,7 @@ lzx_declare_literal(struct lzx_compressor *c, unsigned literal,
 			.data = main_symbol,
 		};
 	}
+#endif
 }
 
 /* Tally, and optionally record, the specified repeat offset match.  */
@@ -1045,6 +1045,8 @@ lzx_declare_repeat_offset_match(struct lzx_compressor *c,
 				unsigned len, unsigned rep_index,
 				struct lzx_item **next_chosen_item)
 {
+	return;
+#if 0
 	unsigned len_header;
 	unsigned len_symbol;
 	unsigned main_symbol;
@@ -1067,6 +1069,7 @@ lzx_declare_repeat_offset_match(struct lzx_compressor *c,
 			.data = (u64)main_symbol | ((u64)len_symbol << 10),
 		};
 	}
+#endif
 }
 
 /* Tally, and optionally record, the specified explicit offset match.  */
@@ -1074,6 +1077,7 @@ static inline void
 lzx_declare_explicit_offset_match(struct lzx_compressor *c, unsigned len, u32 offset,
 				  struct lzx_item **next_chosen_item)
 {
+#if 0
 	unsigned len_header;
 	unsigned len_symbol;
 	unsigned main_symbol;
@@ -1116,6 +1120,7 @@ lzx_declare_explicit_offset_match(struct lzx_compressor *c, unsigned len, u32 of
 				((u64)extra_bits << 23),
 		};
 	}
+#endif
 }
 
 static inline struct lzx_item *
@@ -1125,7 +1130,6 @@ lzx_declare_item_list(struct lzx_compressor *c, struct lzx_optimum_node *cur_nod
 	do {
 		u32 len = cur_node->item & OPTIMUM_LEN_MASK;
 		u32 offset_data = cur_node->item >> OPTIMUM_OFFSET_SHIFT;
-		u64 item_data;
 
 		if (len == 1) {
 			unsigned literal = offset_data;
@@ -1133,56 +1137,36 @@ lzx_declare_item_list(struct lzx_compressor *c, struct lzx_optimum_node *cur_nod
 
 			c->freqs.main[main_symbol]++;
 			if (record_items)
-				item_data = main_symbol;
-			cur_node--;
+				next_item->main_symbol = main_symbol;
 		} else {
-			unsigned main_symbol;
+			unsigned len_header;
 			unsigned offset_slot;
-			unsigned len_header = len - LZX_MIN_MATCH_LEN;;
+			unsigned main_symbol;
 
-			item_data = 0;
+			len_header = len - LZX_MIN_MATCH_LEN;;
+			offset_slot = lzx_get_offset_slot_fast(c, offset_data);
 
-			if (len_header < LZX_NUM_PRIMARY_LENS) {
-				if (record_items)
-					item_data |= LZX_LENCODE_NUM_SYMBOLS << 10;
-			} else {
-				unsigned len_symbol;
-
-				len_symbol = len_header - LZX_NUM_PRIMARY_LENS;
-				len_header = LZX_NUM_PRIMARY_LENS;
-				c->freqs.len[len_symbol]++;
-				if (record_items)
-					item_data |= len_symbol << 10;
+			if (record_items) {
+				next_item->adjusted_length = len_header;
+				next_item->adjusted_offset = offset_data;
+				next_item->offset_slot = offset_slot;
 			}
 
-			unsigned num_extra_bits;
-			u32 extra_bits;
+			if (len_header >= LZX_NUM_PRIMARY_LENS) {
+				c->freqs.len[len_header - LZX_NUM_PRIMARY_LENS]++;
+				len_header = LZX_NUM_PRIMARY_LENS;
+			}
 
-			offset_slot = lzx_get_offset_slot_fast(c, offset_data);
 			main_symbol = lzx_main_symbol_for_match(offset_slot, len_header);
 			c->freqs.main[main_symbol]++;
 			if (record_items)
-				item_data |= main_symbol;
+				next_item->main_symbol = main_symbol;
 
-			num_extra_bits = lzx_extra_offset_bits[offset_slot];
-
-			if (num_extra_bits >= LZX_NUM_ALIGNED_OFFSET_BITS)
+			if (offset_slot >= 8)
 				c->freqs.aligned[offset_data & LZX_ALIGNED_OFFSET_BITMASK]++;
-
-			if (record_items) {
-				extra_bits = offset_data - lzx_offset_slot_base[offset_slot];
-
-				BUILD_BUG_ON(LZX_MAINCODE_MAX_NUM_SYMBOLS > (1 << 10));
-				BUILD_BUG_ON(LZX_LENCODE_NUM_SYMBOLS > (1 << 8));
-				item_data |= num_extra_bits << 18;
-				item_data |= (u64)extra_bits << 23;
-			}
-			cur_node -= len;
 		}
-
-		if (record_items)
-			*--next_item = (struct lzx_item) { .data = item_data };
-
+		cur_node -= len;
+		next_item--;
 	} while (cur_node != c->optimum_nodes);
 
 	return next_item;
@@ -1566,9 +1550,9 @@ lzx_optimize_and_write_block(struct lzx_compressor *c,
 		}
 	} while (--num_passes_remaining);
 
-	chosen_items = lzx_declare_item_list(c, c->optimum_nodes + block_size,
-					     &c->chosen_items[ARRAY_LEN(c->chosen_items)],
-					     true);
+	chosen_items = 1 + lzx_declare_item_list(c, c->optimum_nodes + block_size,
+						 &c->chosen_items[ARRAY_LEN(c->chosen_items) - 1],
+						 true);
 	lzx_finish_block(c, os, block_size, chosen_items,
 			 &c->chosen_items[ARRAY_LEN(c->chosen_items)] - chosen_items);
 	return new_queue;
