@@ -1140,23 +1140,16 @@ lzx_declare_explicit_offset_match(struct lzx_compressor *c, unsigned len, u32 of
 #endif
 }
 
-static inline struct lzx_item *
-lzx_declare_item_list(struct lzx_compressor *c, struct lzx_optimum_node *cur_node,
-		      struct lzx_item *next_item, bool record_items)
+static void
+lzx_tally_item_list(struct lzx_compressor *c, u32 block_size)
 {
-	unsigned litrunlen = 0;
-
-	if (record_items)
-		next_item->match_hdr = 0xFF;
-
+	struct lzx_optimum_node *cur_node = &c->optimum_nodes[block_size];
 	do {
 		const u32 len = cur_node->item & OPTIMUM_LEN_MASK;
 		const u32 offset_data = cur_node->item >> OPTIMUM_OFFSET_SHIFT;
 
 		if (len == 1) {
 			c->freqs.main[offset_data]++;
-			if (record_items)
-				litrunlen++;
 			cur_node--;
 		} else {
 			unsigned len_header;
@@ -1166,14 +1159,52 @@ lzx_declare_item_list(struct lzx_compressor *c, struct lzx_optimum_node *cur_nod
 			len_header = len - LZX_MIN_MATCH_LEN;;
 			offset_slot = lzx_get_offset_slot_fast(c, offset_data);
 
-			if (record_items) {
-				next_item->litrunlen = litrunlen;
-				next_item--;
-				next_item->adjusted_length = len_header;
-				next_item->adjusted_offset = offset_data;
-				next_item->offset_slot = offset_slot;
-				litrunlen = 0;
+			if (len_header >= LZX_NUM_PRIMARY_LENS) {
+				c->freqs.len[len_header - LZX_NUM_PRIMARY_LENS]++;
+				len_header = LZX_NUM_PRIMARY_LENS;
 			}
+
+			main_symbol = lzx_main_symbol_for_match(offset_slot, len_header);
+			c->freqs.main[main_symbol]++;
+
+			if (offset_slot >= 8)
+				c->freqs.aligned[offset_data & LZX_ALIGNED_OFFSET_BITMASK]++;
+			cur_node -= len;
+		}
+	} while (cur_node != c->optimum_nodes);
+}
+
+static struct lzx_item *
+lzx_record_item_list(struct lzx_compressor *c, u32 block_size,
+		     struct lzx_item *next_item)
+{
+	struct lzx_optimum_node *cur_node = &c->optimum_nodes[block_size];
+	unsigned litrunlen = 0;
+
+	next_item->match_hdr = 0xFF;
+
+	do {
+		const u32 len = cur_node->item & OPTIMUM_LEN_MASK;
+		const u32 offset_data = cur_node->item >> OPTIMUM_OFFSET_SHIFT;
+
+		if (len == 1) {
+			c->freqs.main[offset_data]++;
+			litrunlen++;
+			cur_node--;
+		} else {
+			unsigned len_header;
+			unsigned offset_slot;
+			unsigned main_symbol;
+
+			len_header = len - LZX_MIN_MATCH_LEN;;
+			offset_slot = lzx_get_offset_slot_fast(c, offset_data);
+
+			next_item->litrunlen = litrunlen;
+			next_item--;
+			next_item->adjusted_length = len_header;
+			next_item->adjusted_offset = offset_data;
+			next_item->offset_slot = offset_slot;
+			litrunlen = 0;
 
 			if (len_header >= LZX_NUM_PRIMARY_LENS) {
 				c->freqs.len[len_header - LZX_NUM_PRIMARY_LENS]++;
@@ -1182,8 +1213,7 @@ lzx_declare_item_list(struct lzx_compressor *c, struct lzx_optimum_node *cur_nod
 
 			main_symbol = lzx_main_symbol_for_match(offset_slot, len_header);
 			c->freqs.main[main_symbol]++;
-			if (record_items)
-				next_item->match_hdr = main_symbol - LZX_NUM_CHARS;
+			next_item->match_hdr = main_symbol - LZX_NUM_CHARS;
 
 			if (offset_slot >= 8)
 				c->freqs.aligned[offset_data & LZX_ALIGNED_OFFSET_BITMASK]++;
@@ -1191,8 +1221,7 @@ lzx_declare_item_list(struct lzx_compressor *c, struct lzx_optimum_node *cur_nod
 		}
 	} while (cur_node != c->optimum_nodes);
 
-	if (record_items)
-		next_item->litrunlen = litrunlen;
+	next_item->litrunlen = litrunlen;
 
 	return next_item;
 }
@@ -1568,16 +1597,15 @@ lzx_optimize_and_write_block(struct lzx_compressor *c,
 		new_queue = lzx_find_min_cost_path(c, block_begin, block_size,
 						   initial_queue);
 		if (num_passes_remaining > 1) {
-			lzx_declare_item_list(c, c->optimum_nodes + block_size, NULL, false);
+			lzx_tally_item_list(c, block_size);
 			lzx_make_huffman_codes(c);
 			lzx_update_costs(c);
 			lzx_reset_symbol_frequencies(c);
 		}
 	} while (--num_passes_remaining);
 
-	chosen_items = lzx_declare_item_list(c, c->optimum_nodes + block_size,
-					     &c->chosen_items[ARRAY_LEN(c->chosen_items) - 1],
-					     true);
+	chosen_items = lzx_record_item_list(c, block_size,
+					    &c->chosen_items[ARRAY_LEN(c->chosen_items) - 1]);
 	lzx_finish_block(c, os, block_begin, block_size, chosen_items);
 	return new_queue;
 }
