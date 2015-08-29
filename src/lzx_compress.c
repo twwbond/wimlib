@@ -1289,7 +1289,7 @@ out:
  * later.  The algorithm does not solve this problem; it only considers the
  * lowest cost to reach each individual position.
  */
-static inline struct lzx_lru_queue
+static struct lzx_lru_queue
 lzx_find_min_cost_path(struct lzx_compressor * const restrict c,
 		       const u8 * const restrict block_begin,
 		       const u32 block_size,
