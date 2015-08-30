@@ -373,7 +373,7 @@ xpress_write_items(struct xpress_output_bitstream *os,
 		adjusted_len = item->adjusted_len;
 
 		if (adjusted_len == 0xFFFF)
-			return;
+			break;
 
 		sym = item->sym;
 
@@ -384,6 +384,9 @@ xpress_write_items(struct xpress_output_bitstream *os,
 		in_next += adjusted_len + XPRESS_MIN_MATCH_LEN;
 		item++;
 	}
+
+	if (item->sym != 0) /* litrunlen=65536 */
+		xpress_write_bits(os, codewords[*in_next], lens[*in_next]);
 }
 
 #if SUPPORT_NEAR_OPTIMAL_PARSING
@@ -490,8 +493,7 @@ xpress_write(struct xpress_compressor *c, void *out, size_t out_nbytes_avail,
 }
 
 static inline void
-xpress_record_literal(struct xpress_compressor *c, unsigned literal,
-		      unsigned *litrunlen_p)
+xpress_record_literal(struct xpress_compressor *c, u8 literal, u32 *litrunlen_p)
 {
 	c->freqs[literal]++;
 	++*litrunlen_p;
@@ -499,9 +501,9 @@ xpress_record_literal(struct xpress_compressor *c, unsigned literal,
 
 static inline void
 xpress_record_match(struct xpress_compressor *c, unsigned length, unsigned offset,
-		    unsigned *litrunlen_p, struct xpress_item **next_item_p)
+		    u32 *litrunlen_p, struct xpress_item **next_item_p)
 {
-	unsigned litrunlen = *litrunlen_p;
+	u32 litrunlen = *litrunlen_p;
 	struct xpress_item *next_item = *next_item_p;
 	unsigned v;
 	unsigned log2_offset;
@@ -529,10 +531,15 @@ xpress_record_match(struct xpress_compressor *c, unsigned length, unsigned offse
 }
 
 static inline void
-xpress_terminate_items(struct xpress_item *terminal_item, unsigned litrunlen)
+xpress_terminate_items(struct xpress_item *terminal_item, u32 litrunlen)
 {
-	terminal_item->litrunlen = litrunlen;
+	/* Special length value to mark last item  */
 	terminal_item->adjusted_len = 0xFFFF;
+
+	/* If litrunlen == 65536, then cap it to 65535 to make it fit in the
+	 * 16-bit location, and set 'sym' to 1 to indicate overflow.  */
+	terminal_item->litrunlen = litrunlen - (litrunlen >> 16);
+	terminal_item->sym = litrunlen >> 16;
 }
 
 /*
@@ -540,7 +547,7 @@ xpress_terminate_items(struct xpress_item *terminal_item, unsigned litrunlen)
  * (Exception: as a heuristic, we pass up length 3 matches that have large
  * offsets.)
  */
-static noinline size_t
+static size_t
 xpress_compress_greedy(struct xpress_compressor * restrict c,
 		       const void * restrict in, size_t in_nbytes,
 		       void * restrict out, size_t out_nbytes_avail)
@@ -549,8 +556,8 @@ xpress_compress_greedy(struct xpress_compressor * restrict c,
 	const u8 *	 in_next = in_begin;
 	const u8 * const in_end = in_begin + in_nbytes;
 	struct xpress_item *next_item = c->chosen_items;
-	unsigned len_3_too_far;
-	unsigned litrunlen = 0;
+	u32 len_3_too_far;
+	u32 litrunlen = 0;
 	u32 next_hashes[2] = {};
 
 	if (in_nbytes <= 8192)
@@ -561,8 +568,8 @@ xpress_compress_greedy(struct xpress_compressor * restrict c,
 	hc_matchfinder_init(&c->hc_mf);
 
 	do {
-		unsigned length;
-		unsigned offset;
+		u32 length;
+		u32 offset;
 
 		length = hc_matchfinder_longest_match(&c->hc_mf,
 						      in_begin,
@@ -607,8 +614,8 @@ xpress_compress_lazy(struct xpress_compressor * restrict c,
 	const u8 *	 in_next = in_begin;
 	const u8 * const in_end = in_begin + in_nbytes;
 	struct xpress_item *next_item = c->chosen_items;
-	unsigned len_3_too_far;
-	unsigned litrunlen = 0;
+	u32 len_3_too_far;
+	u32 litrunlen = 0;
 	u32 next_hashes[2] = {};
 
 	if (in_nbytes <= 8192)
@@ -619,11 +626,11 @@ xpress_compress_lazy(struct xpress_compressor * restrict c,
 	hc_matchfinder_init(&c->hc_mf);
 
 	do {
-		unsigned cur_len;
-		unsigned cur_offset;
-		unsigned next_len;
-		unsigned next_offset;
-		unsigned skip_len;
+		u32 cur_len;
+		u32 cur_offset;
+		u32 next_len;
+		u32 next_offset;
+		u32 skip_len;
 
 		/* Find the longest match at the current position.  */
 		cur_len = hc_matchfinder_longest_match(&c->hc_mf,
