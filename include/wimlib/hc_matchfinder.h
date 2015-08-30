@@ -328,27 +328,28 @@ hc_matchfinder_skip_positions(struct hc_matchfinder * const restrict mf,
 	const u8 *in_next = in_begin + cur_pos;
 	const u8 * const stop_ptr = in_next + count;
 
-	if (likely(stop_ptr <= in_begin + end_pos - count)) {
+	if (likely(stop_ptr <= in_begin + end_pos - 5)) {
 		u32 hash3, hash4;
 		u32 next_seq3, next_seq4;
+
+		hash3 = next_hashes[0];
+		hash4 = next_hashes[1];
 		do {
-			next_seq4 = load_u32_unaligned(in_next + 1);
-			next_seq3 = loaded_u32_to_u24(next_seq4);
-
-			hash3 = next_hashes[0];
-			hash4 = next_hashes[1];
-
 			mf->hash3_tab[hash3] = in_next - in_begin;
 			mf->next_tab[in_next - in_begin] = mf->hash4_tab[hash4];
 			mf->hash4_tab[hash4] = in_next - in_begin;
 
-			next_hashes[0] = lz_hash(next_seq3, HC_MF_HASH3_ORDER);
-			next_hashes[1] = lz_hash(next_seq4, HC_MF_HASH4_ORDER);
+			next_seq4 = load_u32_unaligned(in_next + 1);
+			next_seq3 = loaded_u32_to_u24(next_seq4);
+			hash3 = lz_hash(next_seq3, HC_MF_HASH3_ORDER);
+			hash4 = lz_hash(next_seq4, HC_MF_HASH4_ORDER);
 
 		} while (++in_next != stop_ptr);
 
-		prefetch(&mf->hash3_tab[next_hashes[0]]);
-		prefetch(&mf->hash4_tab[next_hashes[1]]);
+		prefetch(&mf->hash3_tab[hash3]);
+		prefetch(&mf->hash4_tab[hash4]);
+		next_hashes[0] = hash3;
+		next_hashes[1] = hash4;
 	}
 
 	return stop_ptr;
