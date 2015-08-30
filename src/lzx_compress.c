@@ -523,53 +523,6 @@ lzx_init_output(struct lzx_output_bitstream *os, void *buffer, size_t size)
 
 #define CAN_BUFFER(n) ((n) < BITBUF_NBITS - 16)
 
-static inline void
-lzx_flush_bits_impl(struct lzx_output_bitstream *os, int level)
-{
-	if (level >= 1 && os->bitcount >= 16) {
-		os->bitcount -= 16;
-		if (os->next != os->end) {
-			put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next);
-			os->next += 2;
-		}
-		if (level >= 2 && os->bitcount >= 16) {
-			os->bitcount -= 16;
-			if (os->next != os->end) {
-				put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next);
-				os->next += 2;
-			}
-			if (level >= 3 && os->bitcount >= 16) {
-				os->bitcount -= 16;
-				if (os->next != os->end) {
-					put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next);
-					os->next += 2;
-				}
-				if (level >= 4 && os->bitcount >= 16) {
-					os->bitcount -= 16;
-					if (os->next != os->end) {
-						put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next);
-						os->next += 2;
-					}
-				}
-			}
-		}
-	}
-}
-
-static inline void
-lzx_flush_bits(struct lzx_output_bitstream *os)
-{
-	lzx_flush_bits_impl(os, 3);
-}
-
-static inline void
-lzx_add_bits(struct lzx_output_bitstream *os, u32 bits, unsigned num_bits)
-{
-	os->bitcount += num_bits;
-	os->bitbuf = (os->bitbuf << num_bits) | bits;
-}
-
-
 #define UNPACK_BITSTREAM			\
 	machine_word_t bitbuf = os->bitbuf;	\
 	u32 bitcount = os->bitcount;		\
@@ -614,8 +567,6 @@ lzx_add_bits(struct lzx_output_bitstream *os, u32 bits, unsigned num_bits)
 static u32
 lzx_flush_output(struct lzx_output_bitstream *os)
 {
-	lzx_flush_bits(os);
-
 	if (os->next == os->end)
 		return 0;
 
@@ -982,10 +933,11 @@ lzx_write_compressed_block(const u8 *block_begin,
 {
 	LZX_ASSERT(block_type == LZX_BLOCKTYPE_ALIGNED ||
 		   block_type == LZX_BLOCKTYPE_VERBATIM);
+	UNPACK_BITSTREAM;
 
 	/* The first three bits indicate the type of block and are one of the
 	 * LZX_BLOCKTYPE_* constants.  */
-	lzx_add_bits(os, block_type, 3);
+	ADD_BITS(block_type, 3);
 
 	/* Output the block size.
 	 *
@@ -1003,25 +955,29 @@ lzx_write_compressed_block(const u8 *block_begin,
 	 * because WIMs created with chunk size greater than 32768 can seemingly
 	 * only be opened by wimlib anyway.  */
 	if (block_size == LZX_DEFAULT_BLOCK_SIZE) {
-		lzx_add_bits(os, 1, 1);
+		ADD_BITS(1, 1);
 	} else {
-		lzx_add_bits(os, 0, 1);
+		ADD_BITS(0, 1);
 
 		if (window_order >= 16)
-			lzx_add_bits(os, block_size >> 16, 8);
+			ADD_BITS(block_size >> 16, 8);
 
-		lzx_add_bits(os, block_size & 0xFFFF, 16);
+		ADD_BITS(block_size & 0xFFFF, 16);
 	}
-	lzx_flush_bits(os);
+	END_CHECK();
+	FLUSH_BITS(3);
 
 	/* If it's an aligned offset block, output the aligned offset code.  */
 	if (block_type == LZX_BLOCKTYPE_ALIGNED) {
 		for (int i = 0; i < LZX_ALIGNEDCODE_NUM_SYMBOLS; i++) {
-			lzx_add_bits(os, codes->lens.aligned[i],
-				     LZX_ALIGNEDCODE_ELEMENT_SIZE);
+			ADD_BITS(codes->lens.aligned[i],
+				 LZX_ALIGNEDCODE_ELEMENT_SIZE);
 		}
-		lzx_flush_bits(os);
+		END_CHECK();
+		FLUSH_BITS(3);
 	}
+
+	PACK_BITSTREAM;
 
 	/* Output the main code (two parts).  */
 	lzx_write_compressed_code(os, codes->lens.main,
@@ -1038,6 +994,9 @@ lzx_write_compressed_block(const u8 *block_begin,
 
 	/* Output the compressed matches and literals.  */
 	lzx_write_items(os, block_type, block_begin, chosen_items, codes);
+
+out:
+	return;
 }
 
 /* Given the frequencies of symbols in an LZX-compressed block and the
