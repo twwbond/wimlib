@@ -164,8 +164,8 @@ struct lzx_codewords {
 /* Codeword lengths (in bits) for the LZX Huffman codes.
  * A zero length means the corresponding codeword has zero frequency.  */
 struct lzx_lens {
-	u8 main[LZX_MAINCODE_MAX_NUM_SYMBOLS];
-	u8 len[LZX_LENCODE_NUM_SYMBOLS];
+	u8 main[LZX_MAINCODE_MAX_NUM_SYMBOLS + 1];
+	u8 len[LZX_LENCODE_NUM_SYMBOLS + 1];
 	u8 aligned[LZX_ALIGNEDCODE_NUM_SYMBOLS];
 };
 
@@ -639,7 +639,7 @@ lzx_compute_precode_items(const u8 lens[restrict],
 		run_end = run_start + 1;
 
 		/* Fast case for a single length.  */
-		if (likely(run_end == num_lens || len != lens[run_end])) {
+		if (likely(len != lens[run_end])) {
 			delta = prev_lens[run_start] - len;
 			if (delta < 0)
 				delta += 17;
@@ -652,7 +652,7 @@ lzx_compute_precode_items(const u8 lens[restrict],
 		/* Extend the run.  */
 		do {
 			run_end++;
-		} while (run_end != num_lens && len == lens[run_end]);
+		} while (len == lens[run_end]);
 
 		if (len == 0) {
 			/* Run of zeroes.  */
@@ -747,6 +747,8 @@ lzx_write_compressed_code(struct lzx_output_bitstream *os,
 	unsigned precode_sym;
 	unsigned i;
 	UNPACK_BITSTREAM;
+	u8 saved = lens[num_lens];
+	*(u8 *)(lens + num_lens) = 0xFF;
 
 	for (i = 0; i < LZX_PRECODE_NUM_SYMBOLS; i++)
 		precode_freqs[i] = 0;
@@ -794,6 +796,7 @@ lzx_write_compressed_code(struct lzx_output_bitstream *os,
 	}
 
 out:
+	*(u8 *)(lens + num_lens) = saved;
 	PACK_BITSTREAM;
 }
 
@@ -2172,6 +2175,7 @@ lzx_create_compressor(size_t max_bufsize, unsigned compression_level,
 		c->nice_match_length = LZX_MAX_MATCH_LEN;
 
 	lzx_init_offset_slot_fast(c);
+
 	*c_ret = c;
 	return 0;
 
