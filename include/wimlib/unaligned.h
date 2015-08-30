@@ -124,6 +124,15 @@ loaded_u32_to_u24(u32 v)
 		return v >> 8;
 }
 
+static inline u32
+loaded_u32_to_u24_B(u32 v)
+{
+	if (CPU_IS_BIG_ENDIAN)
+		return v & 0xFFFFFF;
+	else
+		return v >> 8;
+}
+
 /*
  * Load the next 3 bytes from the memory location @p into the 24 low-order bits
  * of a 32-bit value.  The order in which the 3 bytes will be arranged as octets

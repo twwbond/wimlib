@@ -162,6 +162,7 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 			     const unsigned max_len,
 			     const unsigned nice_len,
 			     const unsigned max_search_depth,
+			     u32 next_hashes[2],
 			     unsigned *offset_ret)
 {
 	unsigned depth_remaining = max_search_depth;
@@ -175,23 +176,33 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 	pos_t cur_node3_1;
 	pos_t cur_node4;
 
-	if (unlikely(max_len < 4))
+	if (unlikely(max_len < 5))
 		goto out;
-	seq4 = load_u32_unaligned(in_next);
-	seq3 = loaded_u32_to_u24(seq4);
-	hash4 = lz_hash(seq4, HC_MF_HASH4_ORDER);
-	hash3 = lz_hash(seq3, HC_MF_HASH3_ORDER);
 
 	cur_pos = in_next - in_begin;
 
-	cur_node4 = mf->hash4_tab[hash4];
-	mf->hash4_tab[hash4] = cur_pos;
-	mf->next_tab[cur_pos] = cur_node4;
-
+	hash3 = next_hashes[0];
 	cur_node3_0 = mf->hash3_tab[hash3][0];
 	cur_node3_1 = mf->hash3_tab[hash3][1];
 	mf->hash3_tab[hash3][0] = cur_pos;
 	mf->hash3_tab[hash3][1] = cur_node3_0;
+
+	hash4 = next_hashes[1];
+	cur_node4 = mf->hash4_tab[hash4];
+	mf->hash4_tab[hash4] = cur_pos;
+	mf->next_tab[cur_pos] = cur_node4;
+
+	seq4 = load_u32_unaligned(in_next + 1);
+	seq3 = loaded_u32_to_u24(seq4);
+	hash3 = lz_hash(seq3, HC_MF_HASH3_ORDER);
+	hash4 = lz_hash(seq4, HC_MF_HASH4_ORDER);
+	prefetch(&mf->hash3_tab[hash3]);
+	prefetch(&mf->hash4_tab[hash4]);
+	next_hashes[0] = hash3;
+	next_hashes[1] = hash4;
+
+	seq4 = load_u32_unaligned(in_next);
+	seq3 = loaded_u32_to_u24(seq4);
 
 	if (best_len < 4) {
 		if (!matchfinder_node_valid(cur_node3_0))
@@ -306,22 +317,37 @@ hc_matchfinder_skip_positions(struct hc_matchfinder * restrict mf,
 			      const u8 *in_begin,
 			      const u8 *in_next,
 			      const u8 *in_end,
-			      unsigned count)
+			      unsigned count,
+			      u32 next_hashes[2])
 {
-	if (unlikely(in_next + count >= in_end - 4))
+	u32 hash3, hash4;
+	u32 seq3, seq4;
+
+	if (unlikely(in_next + count >= in_end - 5))
 		return in_next + count;
 
 	pos_t cur_pos = in_next - in_begin;
 
 	do {
-		u32 seq4 = load_u32_unaligned(in_next);
-		u32 seq3 = loaded_u32_to_u24(seq4);
-		u32 hash3 = lz_hash(seq3, HC_MF_HASH3_ORDER);
-		u32 hash4 = lz_hash(seq4, HC_MF_HASH4_ORDER);
+		seq4 = load_u32_unaligned(in_next + 1);
+		seq3 = loaded_u32_to_u24(seq4);
+
+		hash3 = next_hashes[0];
+		hash4 = next_hashes[1];
+
 		mf->hash3_tab[hash3][1] = mf->hash3_tab[hash3][0];
 		mf->hash3_tab[hash3][0] = cur_pos;
+
 		mf->next_tab[cur_pos] = mf->hash4_tab[hash4];
 		mf->hash4_tab[hash4] = cur_pos;
+
+		hash3 = lz_hash(seq3, HC_MF_HASH3_ORDER);
+		hash4 = lz_hash(seq4, HC_MF_HASH4_ORDER);
+
+
+		next_hashes[0] = hash3;
+		next_hashes[1] = hash4;
+
 		in_next++;
 		cur_pos++;
 	} while (--count);

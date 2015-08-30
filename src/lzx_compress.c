@@ -1826,6 +1826,7 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 	unsigned max_len = LZX_MAX_MATCH_LEN;
 	unsigned nice_len = min(c->nice_match_length, max_len);
 	u32 recent_offsets[3] = {1, 1, 1};
+	u32 next_hashes[2] = {};
 
 	hc_matchfinder_init(&c->hc_mf);
 
@@ -1867,6 +1868,7 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 							       max_len,
 							       nice_len,
 							       c->max_search_depth,
+							       next_hashes,
 							       &cur_offset);
 			if (cur_len < 3 ||
 			    (cur_len == 3 &&
@@ -1932,6 +1934,7 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 								max_len,
 								nice_len,
 								c->max_search_depth / 2,
+								next_hashes,
 								&next_offset);
 
 			if (next_len <= cur_len - 2) {
@@ -1987,7 +1990,8 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 								in_begin,
 								in_next,
 								in_end,
-								skip_len);
+								skip_len,
+								next_hashes);
 		} while (in_next < in_block_end);
 
 		lzx_terminate_block(next_item, litrunlen);
