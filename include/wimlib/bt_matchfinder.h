@@ -169,7 +169,8 @@ bt_matchfinder_get_matches(struct bt_matchfinder * const restrict mf,
 		return lz_matchptr;
 	}
 
-	hash = bt_matchfinder_hash_3_bytes(in_next);
+	hash = *next_hash;
+	*next_hash = bt_matchfinder_hash_3_bytes(in_next + 1);
 	cur_node = mf->hash_tab[hash];
 	mf->hash_tab[hash] = in_next - in_begin;
 
@@ -274,7 +275,8 @@ bt_matchfinder_skip_position(struct bt_matchfinder * const restrict mf,
 	if (unlikely(in_end - in_next < LZ_HASH3_REQUIRED_NBYTES + 1))
 		return;
 
-	hash = bt_matchfinder_hash_3_bytes(in_next);
+	hash = *next_hash;
+	*next_hash = bt_matchfinder_hash_3_bytes(in_next + 1);
 	cur_node = mf->hash_tab[hash];
 	mf->hash_tab[hash] = in_next - in_begin;
 
