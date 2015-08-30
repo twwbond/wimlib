@@ -623,6 +623,7 @@ xpress_compress_lazy(struct xpress_compressor * restrict c,
 		unsigned cur_offset;
 		unsigned next_len;
 		unsigned next_offset;
+		unsigned skip_len;
 
 		/* Find the longest match at the current position.  */
 		cur_len = hc_matchfinder_longest_match(&c->hc_mf,
@@ -650,17 +651,8 @@ xpress_compress_lazy(struct xpress_compressor * restrict c,
 
 		/* If the current match is very long, choose it immediately.  */
 		if (cur_len >= c->nice_match_length) {
-
-			xpress_record_match(c, cur_len, cur_offset,
-					    &litrunlen, &next_item);
-
-			in_next = hc_matchfinder_skip_positions(&c->hc_mf,
-								in_begin,
-								in_next,
-								in_end,
-								cur_len - 1,
-								next_hashes);
-			continue;
+			skip_len = cur_len - 1;
+			goto choose_cur_match;
 		}
 
 		/*
@@ -691,24 +683,25 @@ xpress_compress_lazy(struct xpress_compressor * restrict c,
 		in_next += 1;
 
 		if (next_len > cur_len) {
-			/* Found a longer match at the next position, so output
+			/* Found a longer match at the next position, so choose
 			 * a literal.  */
 			xpress_record_literal(c, *(in_next - 2), &litrunlen);
 			cur_len = next_len;
 			cur_offset = next_offset;
 			goto have_cur_match;
-		} else {
-			/* Didn't find a longer match at the next position, so
-			 * output the current match.  */
-			xpress_record_match(c, cur_len, cur_offset,
-					    &litrunlen, &next_item);
-			in_next = hc_matchfinder_skip_positions(&c->hc_mf,
-								in_begin,
-								in_next,
-								in_end,
-								cur_len - 2,
-								next_hashes);
 		}
+
+		/* Didn't find a longer match at the next position, so choose
+		 * the current match.  */
+		skip_len = cur_len - 2;
+	choose_cur_match:
+		xpress_record_match(c, cur_len, cur_offset, &litrunlen, &next_item);
+		in_next = hc_matchfinder_skip_positions(&c->hc_mf,
+							in_begin,
+							in_next,
+							in_end,
+							skip_len,
+							next_hashes);
 	} while (in_next != in_end);
 
 	xpress_terminate_items(next_item, litrunlen);
