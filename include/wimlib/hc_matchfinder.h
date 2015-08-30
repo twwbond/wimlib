@@ -93,8 +93,8 @@
  * ----------------------------------------------------------------------------
  */
 
-#ifndef _HC_MF_H
-#define _HC_MF_H
+#ifndef _HC_MATCHFINDER_H
+#define _HC_MATCHFINDER_H
 
 #include "wimlib/lz_extend.h"
 #include "wimlib/lz_hash.h"
@@ -164,12 +164,12 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 			     u32 * restrict next_hashes,
 			     unsigned * const restrict offset_ret)
 {
+	const pos_t cur_pos = in_next - in_begin;
 	unsigned depth_remaining = max_search_depth;
 	const u8 *best_matchptr = best_matchptr; /* uninitialized */
 	u32 next_seq3, next_seq4;
 	u32 seq3, seq4;
 	u32 hash3, hash4;
-	pos_t cur_pos;
 	pos_t cur_node3;
 	pos_t cur_node4;
 	const u8 *matchptr;
@@ -178,14 +178,13 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 	if (unlikely(max_len < 5))
 		goto out;
 
-	cur_pos = in_next - in_begin;
-
 	hash3 = next_hashes[0];
-	cur_node3 = mf->hash3_tab[hash3];
-	mf->hash3_tab[hash3] = cur_pos;
-
 	hash4 = next_hashes[1];
+
+	cur_node3 = mf->hash3_tab[hash3];
 	cur_node4 = mf->hash4_tab[hash4];
+
+	mf->hash3_tab[hash3] = cur_pos;
 	mf->hash4_tab[hash4] = cur_pos;
 	mf->next_tab[cur_pos] = cur_node4;
 
@@ -202,6 +201,7 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 	if (best_len < 4) {
 		if (!matchfinder_node_valid(cur_node3))
 			goto out;
+
 		if (best_len < 3) {
 			matchptr = &in_begin[cur_node3];
 			if (load_u24_unaligned(matchptr) == seq3) {
@@ -214,8 +214,7 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 			goto out;
 
 		for (;;) {
-			/* No length 4 match found yet.
-			 * Check the first 4 bytes.  */
+			/* No length 4 match found yet.  Check the first 4 bytes.  */
 			matchptr = &in_begin[cur_node4];
 
 			if (load_u32_unaligned(matchptr) == seq4)
@@ -327,7 +326,6 @@ hc_matchfinder_skip_positions(struct hc_matchfinder * restrict mf,
 		hash4 = next_hashes[1];
 
 		mf->hash3_tab[hash3] = cur_pos;
-
 		mf->next_tab[cur_pos] = mf->hash4_tab[hash4];
 		mf->hash4_tab[hash4] = cur_pos;
 
@@ -345,4 +343,4 @@ hc_matchfinder_skip_positions(struct hc_matchfinder * restrict mf,
 	return in_next;
 }
 
-#endif /* _HC_MF_H */
+#endif /* _HC_MATCHFINDER_H */
