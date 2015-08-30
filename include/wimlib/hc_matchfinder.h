@@ -101,16 +101,15 @@
 #include "wimlib/matchfinder_common.h"
 #include "wimlib/unaligned.h"
 
-#if MATCHFINDER_MAX_WINDOW_ORDER < 14
-#  define HC_MATCHFINDER_HASH_ORDER 14
-#else
-#  define HC_MATCHFINDER_HASH_ORDER 15
-#endif
+#define HC_MATCHFINDER_HASH3_ORDER	13
+#define HC_MATCHFINDER_HASH4_ORDER	15
 
-#define HC_MATCHFINDER_HASH_LENGTH	(1UL << HC_MATCHFINDER_HASH_ORDER)
+#define HC_MATCHFINDER_HASH3_LENGTH	(1UL << HC_MATCHFINDER_HASH3_ORDER)
+#define HC_MATCHFINDER_HASH4_LENGTH	(1UL << HC_MATCHFINDER_HASH4_ORDER)
 
 struct hc_matchfinder {
-	pos_t hash_tab[HC_MATCHFINDER_HASH_LENGTH];
+	pos_t hash3_tab[HC_MATCHFINDER_HASH3_LENGTH];
+	pos_t hash4_tab[HC_MATCHFINDER_HASH4_LENGTH];
 	pos_t next_tab[];
 } _aligned_attribute(MATCHFINDER_ALIGNMENT);
 
@@ -119,14 +118,15 @@ struct hc_matchfinder {
 static inline size_t
 hc_matchfinder_size(size_t max_bufsize)
 {
-	return sizeof(pos_t) * (HC_MATCHFINDER_HASH_LENGTH + max_bufsize);
+	return sizeof(struct hc_matchfinder) + (max_bufsize * sizeof(pos_t));
 }
 
 /* Prepare the matchfinder for a new input buffer.  */
 static inline void
 hc_matchfinder_init(struct hc_matchfinder *mf)
 {
-	matchfinder_init(mf->hash_tab, HC_MATCHFINDER_HASH_LENGTH);
+	matchfinder_init(mf->hash3_tab, HC_MATCHFINDER_HASH3_LENGTH +
+					HC_MATCHFINDER_HASH4_LENGTH);
 }
 
 /*
@@ -168,57 +168,74 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 	const u8 *best_matchptr = best_matchptr; /* uninitialized */
 	const u8 *matchptr;
 	unsigned len;
-	u32 first_3_bytes;
-	u32 hash;
-	pos_t cur_node;
+	u32 seq3, seq4;
+	u32 hash3, hash4;
+	pos_t cur_pos;
+	pos_t cur_node3;
+	pos_t cur_node4;
 
 	/* Insert the current sequence into the appropriate linked list.  */
-	if (unlikely(max_len < LOAD_U24_REQUIRED_NBYTES))
+	if (unlikely(max_len < 4))
 		goto out;
-	first_3_bytes = load_u24_unaligned(in_next);
-	hash = lz_hash(first_3_bytes, HC_MATCHFINDER_HASH_ORDER);
-	cur_node = mf->hash_tab[hash];
-	mf->next_tab[in_next - in_begin] = cur_node;
-	mf->hash_tab[hash] = in_next - in_begin;
+	seq4 = load_u32_unaligned(in_next);
+	seq3 = loaded_u32_to_u24(seq4);
+	hash4 = lz_hash(seq4, HC_MATCHFINDER_HASH4_ORDER);
+	hash3 = lz_hash(seq3, HC_MATCHFINDER_HASH3_ORDER);
+
+	cur_pos = in_next - in_begin;
+
+	cur_node3 = mf->hash3_tab[hash3];
+	cur_node4 = mf->hash4_tab[hash4];
+	mf->hash3_tab[hash3] = cur_pos;
+	mf->hash4_tab[hash4] = cur_pos;
+	mf->next_tab[cur_pos] = cur_node4;
 
 	if (unlikely(best_len >= max_len))
 		goto out;
 
+	if (best_len < 3 && matchfinder_node_valid(cur_node3)) {
+		matchptr = &in_begin[cur_node3];
+		if (load_u24_unaligned(matchptr) == seq3) {
+			best_len = 3;
+			best_matchptr = matchptr;
+		}
+	}
+
 	/* Search the appropriate linked list for matches.  */
 
-	if (!(matchfinder_node_valid(cur_node)))
+	if (!(matchfinder_node_valid(cur_node4)))
 		goto out;
 
-	if (best_len < 3) {
+	if (best_len < 4) {
 		for (;;) {
-			/* No length 3 match found yet.
-			 * Check the first 3 bytes.  */
-			matchptr = &in_begin[cur_node];
+			/* No length 4 match found yet.
+			 * Check the first 4 bytes.  */
+			matchptr = &in_begin[cur_node4];
 
-			if (load_u24_unaligned(matchptr) == first_3_bytes)
+			if (load_u32_unaligned(matchptr) == seq4)
 				break;
 
-			/* The first 3 bytes did not match.  Keep trying.  */
-			cur_node = mf->next_tab[cur_node];
-			if (!matchfinder_node_valid(cur_node) || !--depth_remaining)
+			/* The first 4 bytes did not match.  Keep trying.  */
+			cur_node4 = mf->next_tab[cur_node4];
+			if (!matchfinder_node_valid(cur_node4) || !--depth_remaining)
 				goto out;
 		}
 
-		/* Found a match of length >= 3.  Extend it to its full length.  */
+		/* Found a match of length >= 4.  Extend it to its full length.  */
 		best_matchptr = matchptr;
-		best_len = lz_extend(in_next, best_matchptr, 3, max_len);
+		best_len = lz_extend(in_next, best_matchptr, 4, max_len);
 		if (best_len >= nice_len)
 			goto out;
-		cur_node = mf->next_tab[cur_node];
-		if (!matchfinder_node_valid(cur_node) || !--depth_remaining)
+		cur_node4 = mf->next_tab[cur_node4];
+		if (!matchfinder_node_valid(cur_node4) || !--depth_remaining)
 			goto out;
 	}
 
 	for (;;) {
 		for (;;) {
-			matchptr = &in_begin[cur_node];
+			matchptr = &in_begin[cur_node4];
 
-			/* Already found a length 3 match.  Try for a longer
+			/* Already found a length 4 match.  Try for a longer
 			 * match; start by checking either the last 4 bytes and
 			 * the first 4 bytes, or the last byte.  (The last byte,
 			 * the one which would extend the match length by 1, is
@@ -233,8 +250,8 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 		#endif
 				break;
 
-			cur_node = mf->next_tab[cur_node];
-			if (!matchfinder_node_valid(cur_node) || !--depth_remaining)
+			cur_node4 = mf->next_tab[cur_node4];
+			if (!matchfinder_node_valid(cur_node4) || !--depth_remaining)
 				goto out;
 		}
 
@@ -250,8 +267,8 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 			if (best_len >= nice_len)
 				goto out;
 		}
-		cur_node = mf->next_tab[cur_node];
-		if (!matchfinder_node_valid(cur_node) || !--depth_remaining)
+		cur_node4 = mf->next_tab[cur_node4];
+		if (!matchfinder_node_valid(cur_node4) || !--depth_remaining)
 			goto out;
 	}
 out:
@@ -282,15 +299,18 @@ hc_matchfinder_skip_positions(struct hc_matchfinder * restrict mf,
 			      const u8 *in_end,
 			      unsigned count)
 {
-	u32 hash;
-
-	if (unlikely(in_next + count >= in_end - LZ_HASH3_REQUIRED_NBYTES))
+	if (unlikely(in_next + count >= in_end - 4))
 		return in_next + count;
 
 	do {
-		hash = lz_hash_3_bytes(in_next, HC_MATCHFINDER_HASH_ORDER);
-		mf->next_tab[in_next - in_begin] = mf->hash_tab[hash];
-		mf->hash_tab[hash] = in_next - in_begin;
+		u32 seq4 = load_u32_unaligned(in_next);
+		u32 seq3 = loaded_u32_to_u24(seq4);
+		u32 hash3 = lz_hash(seq3, HC_MATCHFINDER_HASH3_ORDER);
+		u32 hash4 = lz_hash(seq4, HC_MATCHFINDER_HASH4_ORDER);
+		pos_t cur_pos = in_next - in_begin;
+		mf->hash3_tab[hash3] = cur_pos;
+		mf->next_tab[cur_pos] = mf->hash4_tab[hash4];
+		mf->hash4_tab[hash4] = cur_pos;
 		in_next++;
 	} while (--count);
 
