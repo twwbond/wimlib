@@ -358,58 +358,30 @@ xpress_write_items(struct xpress_output_bitstream *os,
 	const struct xpress_item *item = chosen_items;
 
 	for (;;) {
-		unsigned litrunlen = item->litrunlen;
+		unsigned litrunlen;
+		unsigned adjusted_len;
+		unsigned sym;
 
+		litrunlen = item->litrunlen;
 		if (litrunlen) {
-
-			if (litrunlen >= 4) {
-				do {
-					unsigned lit0 = in_next[0];
-					unsigned lit1 = in_next[1];
-					unsigned lit2 = in_next[2];
-					unsigned lit3 = in_next[3];
-
-					xpress_write_bits(os, codewords[lit0], lens[lit0]);
-					xpress_write_bits(os, codewords[lit1], lens[lit1]);
-					xpress_write_bits(os, codewords[lit2], lens[lit2]);
-					xpress_write_bits(os, codewords[lit3], lens[lit3]);
-
-					litrunlen -= 4;
-					in_next += 4;
-				} while (litrunlen >= 4);
-				if (!litrunlen)
-					goto litrun_done;
-			}
-
-			unsigned lit = *in_next++;
-			xpress_write_bits(os, codewords[lit], lens[lit]);
-			if (--litrunlen) {
-				unsigned lit = *in_next++;
-				xpress_write_bits(os, codewords[lit], lens[lit]);
-				if (--litrunlen) {
-					unsigned lit = *in_next++;
-					xpress_write_bits(os, codewords[lit], lens[lit]);
-				}
-			}
+			do {
+				xpress_write_bits(os, codewords[*in_next], lens[*in_next]);
+				in_next++;
+			} while (--litrunlen);
 		}
 
-	litrun_done:
-		;
-
-		unsigned adjusted_len = item->adjusted_len;
+		adjusted_len = item->adjusted_len;
 
 		if (adjusted_len == 0xFFFF)
 			return;
 
-		in_next += adjusted_len + XPRESS_MIN_MATCH_LEN;
-
-		unsigned sym = item->sym;
-		unsigned extra_offset_bits = item->extra_offset_bits;
+		sym = item->sym;
 
 		xpress_write_bits(os, codewords[sym], lens[sym]);
 		xpress_write_extra_length_bytes(os, adjusted_len);
-		xpress_write_bits(os, extra_offset_bits, (sym >> 4) & 0xF);
+		xpress_write_bits(os, item->extra_offset_bits, (sym >> 4) & 0xF);
 
+		in_next += adjusted_len + XPRESS_MIN_MATCH_LEN;
 		item++;
 	}
 }
