@@ -558,12 +558,11 @@ xpress_compress_greedy(struct xpress_compressor * restrict c,
 			*next_chosen_item++ =
 				xpress_record_match(c, length, offset);
 			in_next += 1;
-			hc_matchfinder_skip_positions(&c->hc_mf,
-						      in_begin,
-						      in_next,
-						      in_end,
-						      length - 1);
-			in_next += length - 1;
+			in_next = hc_matchfinder_skip_positions(&c->hc_mf,
+								in_begin,
+								in_next,
+								in_end,
+								length - 1);
 		} else {
 			/* No match found  */
 			*next_chosen_item++ =
@@ -635,12 +634,11 @@ xpress_compress_lazy(struct xpress_compressor * restrict c,
 			*next_chosen_item++ =
 				xpress_record_match(c, cur_len, cur_offset);
 
-			hc_matchfinder_skip_positions(&c->hc_mf,
-						      in_begin,
-						      in_next,
-						      in_end,
-						      cur_len - 1);
-			in_next += cur_len - 1;
+			in_next = hc_matchfinder_skip_positions(&c->hc_mf,
+								in_begin,
+								in_next,
+								in_end,
+								cur_len - 1);
 			continue;
 		}
 
@@ -683,12 +681,11 @@ xpress_compress_lazy(struct xpress_compressor * restrict c,
 			 * output the current match.  */
 			*next_chosen_item++ =
 				xpress_record_match(c, cur_len, cur_offset);
-			hc_matchfinder_skip_positions(&c->hc_mf,
-						      in_begin,
-						      in_next,
-						      in_end,
-						      cur_len - 2);
-			in_next += cur_len - 2;
+			in_next = hc_matchfinder_skip_positions(&c->hc_mf,
+								in_begin,
+								in_next,
+								in_end,
+								cur_len - 2);
 			continue;
 		}
 	} while (in_next != in_end);

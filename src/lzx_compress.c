@@ -1983,12 +1983,11 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 		choose_cur_match:
 			lzx_record_match(c, cur_len, cur_offset_data,
 					 recent_offsets, &litrunlen, &next_item);
-			hc_matchfinder_skip_positions(&c->hc_mf,
-						      in_begin,
-						      in_next,
-						      in_end,
-						      skip_len);
-			in_next += skip_len;
+			in_next = hc_matchfinder_skip_positions(&c->hc_mf,
+								in_begin,
+								in_next,
+								in_end,
+								skip_len);
 		} while (in_next < in_block_end);
 
 		lzx_terminate_block(next_item, litrunlen);

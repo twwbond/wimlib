@@ -272,8 +272,10 @@ out:
  *	Pointer to the end of the input buffer.
  * @count
  *	The number of bytes to advance.  Must be > 0.
+ *
+ * Returns @in_next + @count.
  */
-static inline void
+static inline const u8 *
 hc_matchfinder_skip_positions(struct hc_matchfinder * restrict mf,
 			      const u8 *in_begin,
 			      const u8 *in_next,
@@ -283,7 +285,7 @@ hc_matchfinder_skip_positions(struct hc_matchfinder * restrict mf,
 	u32 hash;
 
 	if (unlikely(in_next + count >= in_end - LZ_HASH3_REQUIRED_NBYTES))
-		return;
+		return in_next + count;
 
 	do {
 		hash = lz_hash_3_bytes(in_next, HC_MATCHFINDER_HASH_ORDER);
@@ -291,6 +293,8 @@ hc_matchfinder_skip_positions(struct hc_matchfinder * restrict mf,
 		mf->hash_tab[hash] = in_next - in_begin;
 		in_next++;
 	} while (--count);
+
+	return in_next;
 }
 
 #endif /* _HC_MATCHFINDER_H */
