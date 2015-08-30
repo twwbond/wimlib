@@ -569,6 +569,44 @@ lzx_add_bits(struct lzx_output_bitstream *os, u32 bits, unsigned num_bits)
 	os->bitbuf = (os->bitbuf << num_bits) | bits;
 }
 
+
+#define UNPACK_BITSTREAM			\
+	machine_word_t bitbuf = os->bitbuf;	\
+	u32 bitcount = os->bitcount;		\
+	u8 *next = os->next;			\
+	u8 *end = os->end;
+
+#define PACK_BITSTREAM				\
+	os->bitbuf = bitbuf;			\
+	os->bitcount = bitcount;		\
+	os->next = next;			\
+	os->end = end;
+
+#define ADD_BITS(bits, n)			\
+{						\
+	bitbuf <<= (n);				\
+	bitbuf |= (bits);			\
+	bitcount += (n);			\
+}
+
+#define END_CHECK()							\
+	if (unlikely(end - next < 6)) {					\
+		next = end;						\
+		goto out;						\
+	}
+
+#define FLUSH_BITS(level)							\
+{										\
+	if (level >= 1)								\
+		put_unaligned_u16_le(bitbuf >> (bitcount - 16), next + 0);	\
+	if (level >= 2)								\
+		put_unaligned_u16_le(bitbuf >> (bitcount - 32), next + 2);	\
+	if (level >= 3)								\
+		put_unaligned_u16_le(bitbuf >> (bitcount - 48), next + 4);	\
+	next += (bitcount >> 4) << 1;						\
+	bitcount &= 15;								\
+}
+
 /*
  * Flush the last coding unit to the output buffer if needed.  Return the total
  * number of bytes written to the output buffer, or 0 if an overflow occurred.
@@ -757,6 +795,7 @@ lzx_write_compressed_code(struct lzx_output_bitstream *os,
 	unsigned precode_item;
 	unsigned precode_sym;
 	unsigned i;
+	UNPACK_BITSTREAM;
 
 	for (i = 0; i < LZX_PRECODE_NUM_SYMBOLS; i++)
 		precode_freqs[i] = 0;
@@ -770,74 +809,41 @@ lzx_write_compressed_code(struct lzx_output_bitstream *os,
 						      precode_items);
 
 	/* Build the precode.  */
-	make_canonical_huffman_code(LZX_PRECODE_NUM_SYMBOLS,
-				    LZX_MAX_PRE_CODEWORD_LEN,
+	make_canonical_huffman_code(LZX_PRECODE_NUM_SYMBOLS, 7,
 				    precode_freqs, precode_lens,
 				    precode_codewords);
 
 	/* Output the lengths of the codewords in the precode.  */
 	for (i = 0; i < LZX_PRECODE_NUM_SYMBOLS; i++) {
-		lzx_add_bits(os, precode_lens[i], LZX_PRECODE_ELEMENT_SIZE);
-		lzx_flush_bits(os);
+		ADD_BITS(precode_lens[i], LZX_PRECODE_ELEMENT_SIZE);
+		END_CHECK();
+		FLUSH_BITS(1);
 	}
 
 	/* Output the encoded lengths of the codewords in the larger code.  */
 	for (i = 0; i < num_precode_items; i++) {
 		precode_item = precode_items[i];
 		precode_sym = precode_item & 0x1F;
-		lzx_add_bits(os, precode_codewords[precode_sym],
-			     precode_lens[precode_sym]);
+		ADD_BITS(precode_codewords[precode_sym],
+			 precode_lens[precode_sym]);
 		if (precode_sym >= 17) {
 			if (precode_sym == 17) {
-				lzx_add_bits(os, precode_item >> 5, 4);
+				ADD_BITS(precode_item >> 5, 4);
 			} else if (precode_sym == 18) {
-				lzx_add_bits(os, precode_item >> 5, 5);
+				ADD_BITS(precode_item >> 5, 5);
 			} else {
-				lzx_add_bits(os, (precode_item >> 5) & 1, 1);
+				ADD_BITS((precode_item >> 5) & 1, 1);
 				precode_sym = precode_item >> 6;
-				lzx_add_bits(os, precode_codewords[precode_sym],
-					     precode_lens[precode_sym]);
+				ADD_BITS(precode_codewords[precode_sym],
+					 precode_lens[precode_sym]);
 			}
 		}
-		lzx_flush_bits(os);
-	}
-}
-
-#define UNPACK_BITSTREAM			\
-	machine_word_t bitbuf = os->bitbuf;	\
-	u32 bitcount = os->bitcount;		\
-	u8 *next = os->next;			\
-	u8 *end = os->end;
-
-#define PACK_BITSTREAM				\
-	os->bitbuf = bitbuf;			\
-	os->bitcount = bitcount;		\
-	os->next = next;			\
-	os->end = end;
-
-#define ADD_BITS(bits, n)			\
-{						\
-	bitbuf <<= (n);				\
-	bitbuf |= (bits);			\
-	bitcount += (n);			\
-}
-
-#define END_CHECK()							\
-	if (unlikely(end - next < 6)) {					\
-		next = end;						\
-		goto out;						\
+		END_CHECK();
+		FLUSH_BITS(2);
 	}
 
-#define FLUSH_BITS(level)							\
-{										\
-	if (level >= 1)								\
-		put_unaligned_u16_le(bitbuf >> (bitcount - 16), next + 0);	\
-	if (level >= 2)								\
-		put_unaligned_u16_le(bitbuf >> (bitcount - 32), next + 2);	\
-	if (level >= 3)								\
-		put_unaligned_u16_le(bitbuf >> (bitcount - 48), next + 4);	\
-	next += (bitcount >> 4) << 1;						\
-	bitcount &= 15;								\
+out:
+	PACK_BITSTREAM;
 }
 
 /*
@@ -858,7 +864,7 @@ lzx_write_compressed_code(struct lzx_output_bitstream *os,
  *	The main, length, and aligned offset Huffman codes for the current
  *	LZX compressed block.
  */
-static noinline void
+static void
 lzx_write_items(struct lzx_output_bitstream *os, int block_type, const u8 *block_data,
 		const struct lzx_item *item, const struct lzx_codes *codes)
 {
@@ -961,7 +967,6 @@ lzx_write_items(struct lzx_output_bitstream *os, int block_type, const u8 *block
 
 out:
 	PACK_BITSTREAM;
-	return;
 }
 
 static void
