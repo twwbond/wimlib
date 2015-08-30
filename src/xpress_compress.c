@@ -1096,7 +1096,8 @@ xpress_create_compressor(size_t max_bufsize, unsigned compression_level,
 	    !SUPPORT_NEAR_OPTIMAL_PARSING)
 	{
 
-		c->chosen_items = MALLOC(max_bufsize * sizeof(struct xpress_item));
+		c->chosen_items = MALLOC((1 + max_bufsize / XPRESS_MIN_MATCH_LEN) *
+					 sizeof(struct xpress_item));
 		if (!c->chosen_items)
 			goto oom1;
 
