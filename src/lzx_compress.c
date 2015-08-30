@@ -1796,7 +1796,7 @@ lzx_compress_near_optimal(struct lzx_compressor *c,
 static unsigned
 lzx_find_longest_repeat_offset_match(const u8 * const in_next,
 				     const u32 bytes_remaining,
-				     struct lzx_lru_queue queue,
+				     const u32 recent_offsets[LZX_NUM_RECENT_OFFSETS],
 				     unsigned *rep_max_idx_ret)
 {
 	BUILD_BUG_ON(LZX_NUM_RECENT_OFFSETS != 3);
@@ -1809,14 +1809,14 @@ lzx_find_longest_repeat_offset_match(const u8 * const in_next,
 	unsigned rep_max_idx;
 	unsigned rep_len;
 
-	matchptr = in_next - lzx_lru_queue_pop(&queue);
+	matchptr = in_next - recent_offsets[0];
 	if (load_u16_unaligned(matchptr) == next_2_bytes)
 		rep_max_len = lz_extend(in_next, matchptr, 2, max_len);
 	else
 		rep_max_len = 0;
 	rep_max_idx = 0;
 
-	matchptr = in_next - lzx_lru_queue_pop(&queue);
+	matchptr = in_next - recent_offsets[1];
 	if (load_u16_unaligned(matchptr) == next_2_bytes) {
 		rep_len = lz_extend(in_next, matchptr, 2, max_len);
 		if (rep_len > rep_max_len) {
@@ -1825,7 +1825,7 @@ lzx_find_longest_repeat_offset_match(const u8 * const in_next,
 		}
 	}
 
-	matchptr = in_next - lzx_lru_queue_pop(&queue);
+	matchptr = in_next - recent_offsets[2];
 	if (load_u16_unaligned(matchptr) == next_2_bytes) {
 		rep_len = lz_extend(in_next, matchptr, 2, max_len);
 		if (rep_len > rep_max_len) {
@@ -1868,10 +1868,9 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 	const u8 * const in_end  = in_begin + c->in_nbytes;
 	unsigned max_len = LZX_MAX_MATCH_LEN;
 	unsigned nice_len = min(c->nice_match_length, max_len);
-	struct lzx_lru_queue queue;
+	u32 recent_offsets[3] = {1, 1, 1};
 
 	hc_matchfinder_init(&c->hc_mf);
-	lzx_lru_queue_init(&queue);
 
 	do {
 		/* Starting a new block  */
@@ -1915,9 +1914,9 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 			if (cur_len < 3 ||
 			    (cur_len == 3 &&
 			     cur_offset >= 8192 - LZX_OFFSET_ADJUSTMENT &&
-			     cur_offset != lzx_lru_queue_R0(queue) &&
-			     cur_offset != lzx_lru_queue_R1(queue) &&
-			     cur_offset != lzx_lru_queue_R2(queue)))
+			     cur_offset != recent_offsets[0] &&
+			     cur_offset != recent_offsets[1] &&
+			     cur_offset != recent_offsets[2]))
 			{
 				/* There was no match found, or the only match found
 				 * was a distant length 3 match.  Output a literal.  */
@@ -1926,7 +1925,7 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 				continue;
 			}
 
-			if (cur_offset == lzx_lru_queue_R0(queue)) {
+			if (cur_offset == recent_offsets[0]) {
 				in_next++;
 				cur_offset_data = 0;
 				skip_len = cur_len - 1;
@@ -1939,7 +1938,7 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 			/* Consider a repeat offset match  */
 			rep_max_len = lzx_find_longest_repeat_offset_match(in_next,
 									   in_end - in_next,
-									   queue,
+									   recent_offsets,
 									   &rep_max_idx);
 			in_next++;
 
@@ -1990,7 +1989,7 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 
 			rep_max_len = lzx_find_longest_repeat_offset_match(in_next,
 									   in_end - in_next,
-									   queue,
+									   recent_offsets,
 									   &rep_max_idx);
 			in_next++;
 
@@ -2052,11 +2051,13 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 				c->freqs.main[LZX_NUM_CHARS + v]++;
 
 				if (cur_offset_data < LZX_NUM_RECENT_OFFSETS) {
-					queue = lzx_lru_queue_swap(queue, cur_offset_data);
+					swap(recent_offsets[0], recent_offsets[cur_offset_data]);
 				} else {
 					if (offset_slot >= 8)
 						c->freqs.aligned[cur_offset_data & LZX_ALIGNED_OFFSET_BITMASK]++;
-					queue = lzx_lru_queue_push(queue, cur_offset_data - LZX_OFFSET_ADJUSTMENT);
+					recent_offsets[2] = recent_offsets[1];
+					recent_offsets[1] = recent_offsets[0];
+					recent_offsets[0] = cur_offset_data - LZX_OFFSET_ADJUSTMENT;
 				}
 				next_item++;
 			}
