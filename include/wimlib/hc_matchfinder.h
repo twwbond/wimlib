@@ -104,12 +104,13 @@
 #define HC_MF_HASH3_ORDER	12
 #define HC_MF_HASH4_ORDER	15
 
-#define HC_MF_HASH3_LENGTH	(1UL << HC_MF_HASH3_ORDER)
-#define HC_MF_HASH4_LENGTH	(1UL << HC_MF_HASH4_ORDER)
+#define HC_MF_HASH3_BUCKETS	(1UL << HC_MF_HASH3_ORDER)
+#define HC_MF_HASH3_WAYS	2
+#define HC_MF_HASH4_BUCKETS	(1UL << HC_MF_HASH4_ORDER)
 
 struct hc_matchfinder {
-	pos_t hash3_tab[HC_MF_HASH3_LENGTH];
-	pos_t hash4_tab[HC_MF_HASH4_LENGTH];
+	pos_t hash3_tab[HC_MF_HASH3_BUCKETS][HC_MF_HASH3_WAYS];
+	pos_t hash4_tab[HC_MF_HASH4_BUCKETS];
 	pos_t next_tab[];
 } _aligned_attribute(MATCHFINDER_ALIGNMENT);
 
@@ -170,7 +171,8 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 	u32 seq3, seq4;
 	u32 hash3, hash4;
 	pos_t cur_pos;
-	pos_t cur_node3;
+	pos_t cur_node3_0;
+	pos_t cur_node3_1;
 	pos_t cur_node4;
 
 	if (unlikely(max_len < 4))
@@ -186,17 +188,25 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 	mf->hash4_tab[hash4] = cur_pos;
 	mf->next_tab[cur_pos] = cur_node4;
 
-	cur_node3 = mf->hash3_tab[hash3];
-	mf->hash3_tab[hash3] = cur_pos;
+	cur_node3_0 = mf->hash3_tab[hash3][0];
+	cur_node3_1 = mf->hash3_tab[hash3][1];
+	mf->hash3_tab[hash3][0] = cur_pos;
+	mf->hash3_tab[hash3][1] = cur_node3_0;
 
 	if (best_len < 4) {
-		if (!matchfinder_node_valid(cur_node3))
+		if (!matchfinder_node_valid(cur_node3_0))
 			goto out;
 		if (best_len < 3) {
-			matchptr = &in_begin[cur_node3];
+			matchptr = &in_begin[cur_node3_0];
 			if (load_u24_unaligned(matchptr) == seq3) {
 				best_len = 3;
 				best_matchptr = matchptr;
+			} else if (matchfinder_node_valid(cur_node3_1)) {
+				matchptr = &in_begin[cur_node3_1];
+				if (load_u24_unaligned(matchptr) == seq3) {
+					best_len = 3;
+					best_matchptr = matchptr;
+				}
 			}
 		}
 
@@ -308,7 +318,8 @@ hc_matchfinder_skip_positions(struct hc_matchfinder * restrict mf,
 		u32 seq3 = loaded_u32_to_u24(seq4);
 		u32 hash3 = lz_hash(seq3, HC_MF_HASH3_ORDER);
 		u32 hash4 = lz_hash(seq4, HC_MF_HASH4_ORDER);
-		mf->hash3_tab[hash3] = cur_pos;
+		mf->hash3_tab[hash3][1] = mf->hash3_tab[hash3][0];
+		mf->hash3_tab[hash3][0] = cur_pos;
 		mf->next_tab[cur_pos] = mf->hash4_tab[hash4];
 		mf->hash4_tab[hash4] = cur_pos;
 		in_next++;
