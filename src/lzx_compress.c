@@ -1247,7 +1247,7 @@ lzx_record_item_list(struct lzx_compressor *c, u32 block_size)
 		}
 
 		v += offset_slot * (LZX_NUM_PRIMARY_LENS + 1);
-		c->freqs.main[LZX_NUM_CHARS | v]++;
+		c->freqs.main[LZX_NUM_CHARS + v]++;
 		c->chosen_items[item_idx].match_hdr = v;
 	}
 
@@ -2027,60 +2027,35 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 
 		choose_cur_match:
 			{
-				unsigned offset_slot = c->offset_slot_fast[cur_offset_data];
+				unsigned offset_slot;
+				unsigned v;
+
+				offset_slot = c->offset_slot_fast[cur_offset_data];
 
 				next_item->litrunlen = litrunlen;
 				litrunlen = 0;
-				next_item->adjusted_length = cur_len - LZX_MIN_MATCH_LEN;
+
+				v = cur_len - LZX_MIN_MATCH_LEN;
+
+				next_item->adjusted_length = v;
+
 				next_item->offset_slot_and_adjusted_offset =
 					(cur_offset_data << 8) | offset_slot;
 
+				if (v >= LZX_NUM_PRIMARY_LENS) {
+					c->freqs.len[v - LZX_NUM_PRIMARY_LENS]++;
+					v = LZX_NUM_PRIMARY_LENS;
+				}
+
+				v += offset_slot * (LZX_NUM_PRIMARY_LENS + 1);
+				next_item->match_hdr = v;
+				c->freqs.main[LZX_NUM_CHARS + v]++;
+
 				if (cur_offset_data < LZX_NUM_RECENT_OFFSETS) {
-
-					unsigned len_header;
-					unsigned len_symbol;
-					unsigned main_symbol;
-
-					if (cur_len - LZX_MIN_MATCH_LEN < LZX_NUM_PRIMARY_LENS) {
-						len_header = cur_len - LZX_MIN_MATCH_LEN;
-						len_symbol = LZX_LENCODE_NUM_SYMBOLS;
-					} else {
-						len_header = LZX_NUM_PRIMARY_LENS;
-						len_symbol = cur_len - LZX_MIN_MATCH_LEN - LZX_NUM_PRIMARY_LENS;
-						c->freqs.len[len_symbol]++;
-					}
-
-					main_symbol = lzx_main_symbol_for_match(offset_slot, len_header);
-
-					c->freqs.main[main_symbol]++;
-
-					next_item->match_hdr = main_symbol - LZX_NUM_CHARS;
-
 					queue = lzx_lru_queue_swap(queue, cur_offset_data);
 				} else {
-					unsigned len_header;
-					unsigned len_symbol;
-					unsigned main_symbol;
-
-					if (cur_len - LZX_MIN_MATCH_LEN < LZX_NUM_PRIMARY_LENS) {
-						len_header = cur_len - LZX_MIN_MATCH_LEN;
-						len_symbol = LZX_LENCODE_NUM_SYMBOLS;
-					} else {
-						len_header = LZX_NUM_PRIMARY_LENS;
-						len_symbol = cur_len - LZX_MIN_MATCH_LEN - LZX_NUM_PRIMARY_LENS;
-						c->freqs.len[len_symbol]++;
-					}
-
-
-					main_symbol = lzx_main_symbol_for_match(offset_slot, len_header);
-
-					c->freqs.main[main_symbol]++;
-
-					next_item->match_hdr = main_symbol - LZX_NUM_CHARS;
-
 					if (offset_slot >= 8)
 						c->freqs.aligned[cur_offset_data & LZX_ALIGNED_OFFSET_BITMASK]++;
-
 					queue = lzx_lru_queue_push(queue, cur_offset_data - LZX_OFFSET_ADJUSTMENT);
 				}
 				next_item++;
