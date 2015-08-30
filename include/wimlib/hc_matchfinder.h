@@ -147,6 +147,10 @@ hc_matchfinder_init(struct hc_matchfinder *mf)
  *	Must be <= @max_len.
  * @max_search_depth
  *	Limit on the number of potential matches to consider.  Must be >= 1.
+ * @next_hashes
+ *	The precomputed hashcodes for the sequences beginning at @in_next.  This
+ *	will be updated with the precomputed hashcodes for the sequences
+ *	beginning at @in_next + 1.
  * @offset_ret
  *	If a match is found, its offset is returned in this location.
  *
@@ -235,7 +239,7 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 		if (!matchfinder_node_valid(cur_node4) || !--depth_remaining)
 			goto out;
 	} else {
-		if (!matchfinder_node_valid(cur_node4) || best_len >= max_len)
+		if (!matchfinder_node_valid(cur_node4) || best_len >= nice_len)
 			goto out;
 	}
 
@@ -295,6 +299,10 @@ out:
  *	Pointer to the next byte in the input buffer to process.
  * @in_end
  *	Pointer to the end of the input buffer.
+ * @next_hashes
+ *	The precomputed hashcodes for the sequences beginning at @in_next.  This
+ *	will be updated with the precomputed hashcodes for the sequences
+ *	beginning at @in_next + @count.
  * @count
  *	The number of bytes to advance.  Must be > 0.
  *

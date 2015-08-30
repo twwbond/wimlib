@@ -708,7 +708,6 @@ xpress_compress_lazy(struct xpress_compressor * restrict c,
 								in_end,
 								cur_len - 2,
 								next_hashes);
-			continue;
 		}
 	} while (in_next != in_end);
 
