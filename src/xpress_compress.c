@@ -186,7 +186,7 @@ struct xpress_optimum_node {
 struct xpress_item {
 	u16 litrunlen;
 	u16 adjusted_len;
-	u16 match_hdr;
+	u16 sym;
 	u16 extra_offset_bits;
 };
 
@@ -360,11 +360,41 @@ xpress_write_items(struct xpress_output_bitstream *os,
 	for (;;) {
 		unsigned litrunlen = item->litrunlen;
 
-		while (litrunlen) {
-			unsigned literal = *in_next++;
-			xpress_write_bits(os, codewords[literal], lens[literal]);
-			litrunlen--;
+		if (litrunlen) {
+
+			if (litrunlen >= 4) {
+				do {
+					unsigned lit0 = in_next[0];
+					unsigned lit1 = in_next[1];
+					unsigned lit2 = in_next[2];
+					unsigned lit3 = in_next[3];
+
+					xpress_write_bits(os, codewords[lit0], lens[lit0]);
+					xpress_write_bits(os, codewords[lit1], lens[lit1]);
+					xpress_write_bits(os, codewords[lit2], lens[lit2]);
+					xpress_write_bits(os, codewords[lit3], lens[lit3]);
+
+					litrunlen -= 4;
+					in_next += 4;
+				} while (litrunlen >= 4);
+				if (!litrunlen)
+					goto litrun_done;
+			}
+
+			unsigned lit = *in_next++;
+			xpress_write_bits(os, codewords[lit], lens[lit]);
+			if (--litrunlen) {
+				unsigned lit = *in_next++;
+				xpress_write_bits(os, codewords[lit], lens[lit]);
+				if (--litrunlen) {
+					unsigned lit = *in_next++;
+					xpress_write_bits(os, codewords[lit], lens[lit]);
+				}
+			}
 		}
+
+	litrun_done:
+		;
 
 		unsigned adjusted_len = item->adjusted_len;
 
@@ -373,13 +403,12 @@ xpress_write_items(struct xpress_output_bitstream *os,
 
 		in_next += adjusted_len + XPRESS_MIN_MATCH_LEN;
 
-		unsigned match_hdr = item->match_hdr;
+		unsigned sym = item->sym;
 		unsigned extra_offset_bits = item->extra_offset_bits;
-		unsigned sym = XPRESS_NUM_CHARS + match_hdr;
 
 		xpress_write_bits(os, codewords[sym], lens[sym]);
 		xpress_write_extra_length_bytes(os, adjusted_len);
-		xpress_write_bits(os, extra_offset_bits, match_hdr >> 4);
+		xpress_write_bits(os, extra_offset_bits, (sym >> 4) & 0xF);
 
 		item++;
 	}
@@ -502,18 +531,26 @@ xpress_record_match(struct xpress_compressor *c, unsigned length, unsigned offse
 {
 	unsigned litrunlen = *litrunlen_p;
 	struct xpress_item *next_item = *next_item_p;
-
-	unsigned adjusted_len = length - XPRESS_MIN_MATCH_LEN;
-	unsigned length_hdr = min(adjusted_len, 0xF);
-	unsigned log2_offset = fls32(offset);
-	unsigned match_hdr = ((log2_offset << 4) | length_hdr);
-
-	c->freqs[XPRESS_NUM_CHARS + match_hdr]++;
+	unsigned v;
+	unsigned log2_offset;
 
 	next_item->litrunlen = litrunlen;
-	next_item->adjusted_len = adjusted_len;
-	next_item->match_hdr = match_hdr;
+
+	v = length - XPRESS_MIN_MATCH_LEN;
+	next_item->adjusted_len = v;
+
+	if (v > 0xF)
+		v = 0xF;
+
+	log2_offset = fls32(offset);
+
 	next_item->extra_offset_bits = offset - (1U << log2_offset);
+
+	v |= log2_offset << 4;
+	v |= XPRESS_NUM_CHARS;
+
+	next_item->sym = v;
+	c->freqs[v]++;
 
 	*litrunlen_p = 0;
 	*next_item_p = next_item + 1;
