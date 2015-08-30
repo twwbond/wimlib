@@ -93,23 +93,23 @@
  * ----------------------------------------------------------------------------
  */
 
-#ifndef _HC_MATCHFINDER_H
-#define _HC_MATCHFINDER_H
+#ifndef _HC_MF_H
+#define _HC_MF_H
 
 #include "wimlib/lz_extend.h"
 #include "wimlib/lz_hash.h"
 #include "wimlib/matchfinder_common.h"
 #include "wimlib/unaligned.h"
 
-#define HC_MATCHFINDER_HASH3_ORDER	12
-#define HC_MATCHFINDER_HASH4_ORDER	15
+#define HC_MF_HASH3_ORDER	12
+#define HC_MF_HASH4_ORDER	15
 
-#define HC_MATCHFINDER_HASH3_LENGTH	(1UL << HC_MATCHFINDER_HASH3_ORDER)
-#define HC_MATCHFINDER_HASH4_LENGTH	(1UL << HC_MATCHFINDER_HASH4_ORDER)
+#define HC_MF_HASH3_LENGTH	(1UL << HC_MF_HASH3_ORDER)
+#define HC_MF_HASH4_LENGTH	(1UL << HC_MF_HASH4_ORDER)
 
 struct hc_matchfinder {
-	pos_t hash3_tab[HC_MATCHFINDER_HASH3_LENGTH];
-	pos_t hash4_tab[HC_MATCHFINDER_HASH4_LENGTH];
+	pos_t hash3_tab[HC_MF_HASH3_LENGTH];
+	pos_t hash4_tab[HC_MF_HASH4_LENGTH];
 	pos_t next_tab[];
 } _aligned_attribute(MATCHFINDER_ALIGNMENT);
 
@@ -177,8 +177,8 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 		goto out;
 	seq4 = load_u32_unaligned(in_next);
 	seq3 = loaded_u32_to_u24(seq4);
-	hash4 = lz_hash(seq4, HC_MATCHFINDER_HASH4_ORDER);
-	hash3 = lz_hash(seq3, HC_MATCHFINDER_HASH3_ORDER);
+	hash4 = lz_hash(seq4, HC_MF_HASH4_ORDER);
+	hash3 = lz_hash(seq3, HC_MF_HASH3_ORDER);
 
 	cur_pos = in_next - in_begin;
 
@@ -306,8 +306,8 @@ hc_matchfinder_skip_positions(struct hc_matchfinder * restrict mf,
 	do {
 		u32 seq4 = load_u32_unaligned(in_next);
 		u32 seq3 = loaded_u32_to_u24(seq4);
-		u32 hash3 = lz_hash(seq3, HC_MATCHFINDER_HASH3_ORDER);
-		u32 hash4 = lz_hash(seq4, HC_MATCHFINDER_HASH4_ORDER);
+		u32 hash3 = lz_hash(seq3, HC_MF_HASH3_ORDER);
+		u32 hash4 = lz_hash(seq4, HC_MF_HASH4_ORDER);
 		mf->hash3_tab[hash3] = cur_pos;
 		mf->next_tab[cur_pos] = mf->hash4_tab[hash4];
 		mf->hash4_tab[hash4] = cur_pos;
@@ -318,4 +318,4 @@ hc_matchfinder_skip_positions(struct hc_matchfinder * restrict mf,
 	return in_next;
 }
 
-#endif /* _HC_MATCHFINDER_H */
+#endif /* _HC_MF_H */
