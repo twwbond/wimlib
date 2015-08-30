@@ -172,8 +172,8 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 	unsigned depth_remaining = max_search_depth;
 	const u8 *best_matchptr = best_matchptr; /* uninitialized */
 	u32 next_seq3, next_seq4;
-	u32 seq3, seq4;
 	u32 hash3, hash4;
+	u32 seq4;
 	pos_t cur_node3;
 	pos_t cur_node4;
 	const u8 *matchptr;
@@ -199,16 +199,16 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 	prefetch(&mf->hash3_tab[next_hashes[0]]);
 	prefetch(&mf->hash4_tab[next_hashes[1]]);
 
-	seq4 = load_u32_unaligned(in_next);
-	seq3 = loaded_u32_to_u24(seq4);
-
 	if (best_len < 4) {
+
 		if (!matchfinder_node_valid(cur_node3))
 			goto out;
 
+		seq4 = load_u32_unaligned(in_next);
+
 		if (best_len < 3) {
 			matchptr = &in_begin[cur_node3];
-			if (load_u24_unaligned(matchptr) == seq3) {
+			if (load_u24_unaligned(matchptr) == loaded_u32_to_u24(seq4)) {
 				best_len = 3;
 				best_matchptr = matchptr;
 			}
