@@ -27,20 +27,6 @@ typedef u16 pos_t;
 typedef u32 pos_t;
 #endif
 
-#if MATCHFINDER_MAX_WINDOW_ORDER != 16 && MATCHFINDER_MAX_WINDOW_ORDER != 32
-
-/* Not all the bits of the position type are needed, so the sign bit can be
- * reserved to mean "out of bounds".  */
-#define MATCHFINDER_NULL ((pos_t)-1)
-
-static inline bool
-matchfinder_node_valid(pos_t node)
-{
-	return !(node & ((pos_t)1 << (sizeof(pos_t) * 8 - 1)));
-}
-
-#else
-
 /* All bits of the position type are needed, so use 0 to mean "out of bounds".
  * This prevents the beginning of the buffer from matching anything; however,
  * this doesn't matter much.  */
@@ -53,7 +39,6 @@ matchfinder_node_valid(pos_t node)
 	return node != 0;
 }
 
-#endif
 
 #define MATCHFINDER_ALIGNMENT 8
 

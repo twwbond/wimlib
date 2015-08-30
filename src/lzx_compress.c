@@ -817,36 +817,27 @@ lzx_write_compressed_code(struct lzx_output_bitstream *os,
 
 #define ADD_BITS(bits, n)			\
 {						\
-	bitbuf = (bitbuf << (n)) | (bits);	\
+	bitbuf <<= (n);				\
+	bitbuf |= (bits);			\
 	bitcount += (n);			\
 }
 
-#define FLUSH_BITS(level)									\
-{												\
-	if (unlikely(end - next < level * 2)) {							\
-		next = end;									\
-		goto out;									\
-	}											\
-	if (level >= 1 && bitcount >= 16) {							\
-		bitcount -= 16;									\
-		put_unaligned_u16_le(bitbuf >> bitcount, next);					\
-		next += 2;									\
-		if (level >= 2 && bitcount >= 16) {						\
-			bitcount -= 16;								\
-			put_unaligned_u16_le(bitbuf >> bitcount, next);				\
-			next += 2;								\
-			if (level >= 3 && bitcount >= 16) {					\
-				bitcount -= 16;							\
-				put_unaligned_u16_le(bitbuf >> bitcount, next);			\
-				next += 2;							\
-				if (level >= 4 && bitcount >= 16) {				\
-					bitcount -= 16;						\
-					put_unaligned_u16_le(bitbuf >> bitcount, next);		\
-					next += 2;						\
-				}								\
-			}									\
-		}										\
-	}											\
+#define END_CHECK()							\
+	if (unlikely(end - next < 6)) {					\
+		next = end;						\
+		goto out;						\
+	}
+
+#define FLUSH_BITS(level)							\
+{										\
+	if (level >= 1)								\
+		put_unaligned_u16_le(bitbuf >> (bitcount - 16), next + 0);	\
+	if (level >= 2)								\
+		put_unaligned_u16_le(bitbuf >> (bitcount - 32), next + 2);	\
+	if (level >= 3)								\
+		put_unaligned_u16_le(bitbuf >> (bitcount - 48), next + 4);	\
+	next += (bitcount >> 4) << 1;						\
+	bitcount &= 15;								\
 }
 
 /*
@@ -867,7 +858,7 @@ lzx_write_compressed_code(struct lzx_output_bitstream *os,
  *	The main, length, and aligned offset Huffman codes for the current
  *	LZX compressed block.
  */
-static void
+static noinline void
 lzx_write_items(struct lzx_output_bitstream *os, int block_type, const u8 *block_data,
 		const struct lzx_item *item, const struct lzx_codes *codes)
 {
@@ -898,6 +889,7 @@ lzx_write_items(struct lzx_output_bitstream *os, int block_type, const u8 *block
 				ADD_BITS(codes->codewords.main[lit2], codes->lens.main[lit2]);
 				ADD_BITS(codes->codewords.main[lit3], codes->lens.main[lit3]);
 
+				END_CHECK();
 				FLUSH_BITS(3);
 
 				block_data += 4;
@@ -905,6 +897,7 @@ lzx_write_items(struct lzx_output_bitstream *os, int block_type, const u8 *block
 			}
 
 			if (litrunlen--) {
+				END_CHECK();
 				unsigned lit = *block_data++;
 				ADD_BITS(codes->codewords.main[lit], codes->lens.main[lit]);
 				if (litrunlen--) {
@@ -913,9 +906,11 @@ lzx_write_items(struct lzx_output_bitstream *os, int block_type, const u8 *block
 					if (litrunlen--) {
 						unsigned lit = *block_data++;
 						ADD_BITS(codes->codewords.main[lit], codes->lens.main[lit]);
-					}
-				}
-				FLUSH_BITS(3);
+						FLUSH_BITS(3);
+					} else
+						FLUSH_BITS(2);
+				} else
+					FLUSH_BITS(1);
 			}
 		}
 
@@ -929,7 +924,6 @@ lzx_write_items(struct lzx_output_bitstream *os, int block_type, const u8 *block
 		ADD_BITS(codes->codewords.main[main_symbol], codes->lens.main[main_symbol]);
 
 		adjusted_length = item->adjusted_length;
-		adjusted_offset = item->offset_slot_and_adjusted_offset >> 8;
 
 		block_data += adjusted_length + LZX_MIN_MATCH_LEN;
 
@@ -939,6 +933,7 @@ lzx_write_items(struct lzx_output_bitstream *os, int block_type, const u8 *block
 		}
 
 		offset_slot = item->offset_slot_and_adjusted_offset & 0xFF;
+		adjusted_offset = item->offset_slot_and_adjusted_offset >> 8;
 
 		num_extra_bits = lzx_extra_offset_bits[offset_slot];
 		extra_bits = adjusted_offset - lzx_offset_slot_base[offset_slot];
@@ -959,6 +954,7 @@ lzx_write_items(struct lzx_output_bitstream *os, int block_type, const u8 *block
 			 * offset bits are output literally.  */
 			ADD_BITS(extra_bits, num_extra_bits);
 		}
+		END_CHECK();
 		FLUSH_BITS(3);
 		item++;
 	}
