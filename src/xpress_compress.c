@@ -540,7 +540,7 @@ xpress_terminate_items(struct xpress_item *terminal_item, unsigned litrunlen)
  * (Exception: as a heuristic, we pass up length 3 matches that have large
  * offsets.)
  */
-static size_t
+static noinline size_t
 xpress_compress_greedy(struct xpress_compressor * restrict c,
 		       const void * restrict in, size_t in_nbytes,
 		       void * restrict out, size_t out_nbytes_avail)
@@ -566,7 +566,7 @@ xpress_compress_greedy(struct xpress_compressor * restrict c,
 
 		length = hc_matchfinder_longest_match(&c->hc_mf,
 						      in_begin,
-						      in_next,
+						      in_next - in_begin,
 						      XPRESS_MIN_MATCH_LEN - 1,
 						      in_end - in_next,
 						      min(in_end - in_next, c->nice_match_length),
@@ -579,8 +579,8 @@ xpress_compress_greedy(struct xpress_compressor * restrict c,
 			xpress_record_match(c, length, offset, &litrunlen, &next_item);
 			in_next = hc_matchfinder_skip_positions(&c->hc_mf,
 								in_begin,
-								in_next + 1,
-								in_end,
+								in_next + 1 - in_begin,
+								in_end - in_begin,
 								length - 1,
 								next_hashes);
 		} else {
@@ -628,7 +628,7 @@ xpress_compress_lazy(struct xpress_compressor * restrict c,
 		/* Find the longest match at the current position.  */
 		cur_len = hc_matchfinder_longest_match(&c->hc_mf,
 						       in_begin,
-						       in_next,
+						       in_next - in_begin,
 						       XPRESS_MIN_MATCH_LEN - 1,
 						       in_end - in_next,
 						       min(in_end - in_next, c->nice_match_length),
@@ -673,7 +673,7 @@ xpress_compress_lazy(struct xpress_compressor * restrict c,
 		 */
 		next_len = hc_matchfinder_longest_match(&c->hc_mf,
 							in_begin,
-							in_next,
+							in_next - in_begin,
 							cur_len,
 						        in_end - in_next,
 						        min(in_end - in_next, c->nice_match_length),
@@ -698,8 +698,8 @@ xpress_compress_lazy(struct xpress_compressor * restrict c,
 		xpress_record_match(c, cur_len, cur_offset, &litrunlen, &next_item);
 		in_next = hc_matchfinder_skip_positions(&c->hc_mf,
 							in_begin,
-							in_next,
-							in_end,
+							in_next - in_begin,
+							in_end - in_begin,
 							skip_len,
 							next_hashes);
 	} while (in_next != in_end);

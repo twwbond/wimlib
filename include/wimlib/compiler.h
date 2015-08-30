@@ -97,4 +97,8 @@
 #  define BUILD_BUG_ON(expr)	((void)sizeof(char[1 - 2*!!(expr)]))
 #endif
 
+#ifndef compiler_hint
+#  define compiler_hint(expr)
+#endif
+
 #endif /* _WIMLIB_COMPILER_H */

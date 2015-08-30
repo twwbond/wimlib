@@ -1863,7 +1863,7 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 
 			cur_len = hc_matchfinder_longest_match(&c->hc_mf,
 							       in_begin,
-							       in_next,
+							       in_next - in_begin,
 							       2,
 							       max_len,
 							       nice_len,
@@ -1929,7 +1929,7 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 
 			next_len = hc_matchfinder_longest_match(&c->hc_mf,
 								in_begin,
-								in_next,
+								in_next - in_begin,
 								cur_len - 2,
 								max_len,
 								nice_len,
@@ -1988,8 +1988,8 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 					 recent_offsets, &litrunlen, &next_item);
 			in_next = hc_matchfinder_skip_positions(&c->hc_mf,
 								in_begin,
-								in_next,
-								in_end,
+								in_next - in_begin,
+								in_end - in_begin,
 								skip_len,
 								next_hashes);
 		} while (in_next < in_block_end);

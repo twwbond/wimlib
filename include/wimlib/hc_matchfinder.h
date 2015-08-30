@@ -157,19 +157,23 @@ hc_matchfinder_init(struct hc_matchfinder *mf)
  * Return the length of the match found, or 'best_len' if no match longer than
  * 'best_len' was found.
  */
-static inline unsigned
+static inline u32
 hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
-			     const u8 * const in_begin,
-			     const u8 * const in_next,
-			     unsigned best_len,
-			     const unsigned max_len,
-			     const unsigned nice_len,
-			     const unsigned max_search_depth,
-			     u32 * restrict next_hashes,
-			     unsigned * const restrict offset_ret)
+			     const u8 * const restrict in_begin,
+			     const ptrdiff_t cur_pos,
+			     u32 best_len,
+			     const u32 max_len,
+			     const u32 nice_len,
+			     const u32 max_search_depth,
+			     u32 next_hashes[const restrict static 2],
+			     u32 * const restrict offset_ret)
 {
-	const pos_t cur_pos = in_next - in_begin;
-	unsigned depth_remaining = max_search_depth;
+	/*compiler_hint(cur_pos >= 0 && cur_pos <= UINT32_MAX);*/
+	/*compiler_hint(nice_len <= max_len);*/
+	/*compiler_hint(max_search_depth > 0);*/
+
+	const u8 *in_next = in_begin + cur_pos;
+	u32 depth_remaining = max_search_depth;
 	const u8 *best_matchptr = best_matchptr; /* uninitialized */
 	u32 next_seq3, next_seq4;
 	u32 hash3, hash4;
@@ -177,7 +181,7 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 	pos_t cur_node3;
 	pos_t cur_node4;
 	const u8 *matchptr;
-	unsigned len;
+	u32 len;
 
 	if (unlikely(max_len < 5))
 		goto out;
@@ -309,46 +313,45 @@ out:
  * Returns @in_next + @count.
  */
 static inline const u8 *
-hc_matchfinder_skip_positions(struct hc_matchfinder * restrict mf,
-			      const u8 *in_begin,
-			      const u8 *in_next,
-			      const u8 *in_end,
-			      unsigned count,
-			      u32 * restrict next_hashes)
+hc_matchfinder_skip_positions(struct hc_matchfinder * const restrict mf,
+			      const u8 * const restrict in_begin,
+			      const ptrdiff_t cur_pos,
+			      const ptrdiff_t end_pos,
+			      const u32 count,
+			      u32 next_hashes[const restrict static 2])
 {
-	u32 hash3, hash4;
-	u32 next_seq3, next_seq4;
-	pos_t cur_pos;
+	/*compiler_hint(cur_pos >= 0 && cur_pos <= UINT32_MAX);*/
+	/*compiler_hint(end_pos >= 0 && end_pos <= UINT32_MAX);*/
+	/*compiler_hint(cur_pos + count <= end_pos);*/
+	/*compiler_hint(count > 0);*/
 
-	if (unlikely(in_next + count >= in_end - 5))
-		return in_next + count;
+	const u8 *in_next = in_begin + cur_pos;
+	const u8 * const stop_ptr = in_next + count;
 
-	cur_pos = in_next - in_begin;
+	if (likely(stop_ptr <= in_begin + end_pos - count)) {
+		u32 hash3, hash4;
+		u32 next_seq3, next_seq4;
+		do {
+			next_seq4 = load_u32_unaligned(in_next + 1);
+			next_seq3 = loaded_u32_to_u24(next_seq4);
 
-	do {
+			hash3 = next_hashes[0];
+			hash4 = next_hashes[1];
 
-		next_seq4 = load_u32_unaligned(in_next + 1);
-		next_seq3 = loaded_u32_to_u24(next_seq4);
+			mf->hash3_tab[hash3] = in_next - in_begin;
+			mf->next_tab[in_next - in_begin] = mf->hash4_tab[hash4];
+			mf->hash4_tab[hash4] = in_next - in_begin;
 
-		hash3 = next_hashes[0];
-		hash4 = next_hashes[1];
+			next_hashes[0] = lz_hash(next_seq3, HC_MF_HASH3_ORDER);
+			next_hashes[1] = lz_hash(next_seq4, HC_MF_HASH4_ORDER);
 
-		mf->hash3_tab[hash3] = cur_pos;
-		mf->next_tab[cur_pos] = mf->hash4_tab[hash4];
-		mf->hash4_tab[hash4] = cur_pos;
+		} while (++in_next != stop_ptr);
 
-		next_hashes[0] = lz_hash(next_seq3, HC_MF_HASH3_ORDER);
-		next_hashes[1] = lz_hash(next_seq4, HC_MF_HASH4_ORDER);
+		prefetch(&mf->hash3_tab[next_hashes[0]]);
+		prefetch(&mf->hash4_tab[next_hashes[1]]);
+	}
 
-		in_next++;
-		cur_pos++;
-
-	} while (--count);
-
-	prefetch(&mf->hash3_tab[next_hashes[0]]);
-	prefetch(&mf->hash4_tab[next_hashes[1]]);
-
-	return in_next;
+	return stop_ptr;
 }
 
 #endif /* _HC_MATCHFINDER_H */
