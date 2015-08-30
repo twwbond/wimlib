@@ -1061,107 +1061,64 @@ lzx_finish_block(struct lzx_compressor *c, struct lzx_output_bitstream *os,
 	*os = _os;
 }
 
-/* Tally, and optionally record, the specified literal byte.  */
 static inline void
-lzx_declare_literal(struct lzx_compressor *c, unsigned literal,
-		    struct lzx_item **next_chosen_item)
+lzx_record_literal(struct lzx_compressor *c, unsigned literal,
+		   u32 *litrunlen_p)
 {
-	return;
-#if 0
-	unsigned main_symbol = lzx_main_symbol_for_literal(literal);
-
-	c->freqs.main[main_symbol]++;
-
-	if (next_chosen_item) {
-		*(*next_chosen_item)++ = (struct lzx_item) {
-			.data = main_symbol,
-		};
-	}
-#endif
+	c->freqs.main[literal]++;
+	++*litrunlen_p;
 }
 
-/* Tally, and optionally record, the specified repeat offset match.  */
 static inline void
-lzx_declare_repeat_offset_match(struct lzx_compressor *c,
-				unsigned len, unsigned rep_index,
-				struct lzx_item **next_chosen_item)
+lzx_record_match(struct lzx_compressor *c,
+		 unsigned length, u32 offset_data,
+		 u32 recent_offsets[LZX_NUM_RECENT_OFFSETS],
+		 u32 *litrunlen_p, struct lzx_item **next_item_p)
 {
-	return;
-#if 0
-	unsigned len_header;
-	unsigned len_symbol;
-	unsigned main_symbol;
-
-	if (len - LZX_MIN_MATCH_LEN < LZX_NUM_PRIMARY_LENS) {
-		len_header = len - LZX_MIN_MATCH_LEN;
-		len_symbol = LZX_LENCODE_NUM_SYMBOLS;
-	} else {
-		len_header = LZX_NUM_PRIMARY_LENS;
-		len_symbol = len - LZX_MIN_MATCH_LEN - LZX_NUM_PRIMARY_LENS;
-		c->freqs.len[len_symbol]++;
-	}
-
-	main_symbol = lzx_main_symbol_for_match(rep_index, len_header);
-
-	c->freqs.main[main_symbol]++;
-
-	if (next_chosen_item) {
-		*(*next_chosen_item)++ = (struct lzx_item) {
-			.data = (u64)main_symbol | ((u64)len_symbol << 10),
-		};
-	}
-#endif
-}
-
-/* Tally, and optionally record, the specified explicit offset match.  */
-static inline void
-lzx_declare_explicit_offset_match(struct lzx_compressor *c, unsigned len, u32 offset,
-				  struct lzx_item **next_chosen_item)
-{
-#if 0
-	unsigned len_header;
-	unsigned len_symbol;
-	unsigned main_symbol;
+	u32 litrunlen = *litrunlen_p;
+	struct lzx_item *next_item = *next_item_p;
 	unsigned offset_slot;
-	unsigned num_extra_bits;
-	u32 extra_bits;
+	unsigned v;
 
-	if (len - LZX_MIN_MATCH_LEN < LZX_NUM_PRIMARY_LENS) {
-		len_header = len - LZX_MIN_MATCH_LEN;
-		len_symbol = LZX_LENCODE_NUM_SYMBOLS;
+	offset_slot = c->offset_slot_fast[offset_data];
+
+	next_item->litrunlen = litrunlen;
+
+	v = length - LZX_MIN_MATCH_LEN;
+
+	next_item->adjusted_length = v;
+
+	next_item->offset_slot_and_adjusted_offset =
+		(offset_data << 8) | offset_slot;
+
+	if (v >= LZX_NUM_PRIMARY_LENS) {
+		c->freqs.len[v - LZX_NUM_PRIMARY_LENS]++;
+		v = LZX_NUM_PRIMARY_LENS;
+	}
+
+	v += offset_slot * (LZX_NUM_PRIMARY_LENS + 1);
+	next_item->match_hdr = v;
+	c->freqs.main[LZX_NUM_CHARS + v]++;
+
+	if (offset_data < LZX_NUM_RECENT_OFFSETS) {
+		swap(recent_offsets[0], recent_offsets[offset_data]);
 	} else {
-		len_header = LZX_NUM_PRIMARY_LENS;
-		len_symbol = len - LZX_MIN_MATCH_LEN - LZX_NUM_PRIMARY_LENS;
-		c->freqs.len[len_symbol]++;
+		if (offset_data >= 16)
+			c->freqs.aligned[offset_data & LZX_ALIGNED_OFFSET_BITMASK]++;
+		recent_offsets[2] = recent_offsets[1];
+		recent_offsets[1] = recent_offsets[0];
+		recent_offsets[0] = offset_data - LZX_OFFSET_ADJUSTMENT;
 	}
 
-	offset_slot = lzx_get_offset_slot_fast(c, offset + LZX_OFFSET_ADJUSTMENT);
+	*next_item_p = next_item + 1;
+	*litrunlen_p = 0;
+}
 
-	main_symbol = lzx_main_symbol_for_match(offset_slot, len_header);
-
-	c->freqs.main[main_symbol]++;
-
-	num_extra_bits = lzx_extra_offset_bits[offset_slot];
-
-	if (num_extra_bits >= LZX_NUM_ALIGNED_OFFSET_BITS)
-		c->freqs.aligned[(offset + LZX_OFFSET_ADJUSTMENT) &
-				 LZX_ALIGNED_OFFSET_BITMASK]++;
-
-	if (next_chosen_item) {
-
-		extra_bits = (offset + LZX_OFFSET_ADJUSTMENT) -
-			     lzx_offset_slot_base[offset_slot];
-
-		BUILD_BUG_ON(LZX_MAINCODE_MAX_NUM_SYMBOLS > (1 << 10));
-		BUILD_BUG_ON(LZX_LENCODE_NUM_SYMBOLS > (1 << 8));
-		*(*next_chosen_item)++ = (struct lzx_item) {
-			.data = (u64)main_symbol |
-				((u64)len_symbol << 10) |
-				((u64)num_extra_bits << 18) |
-				((u64)extra_bits << 23),
-		};
-	}
-#endif
+static inline void
+lzx_terminate_block(struct lzx_item *terminal_item, u32 litrunlen)
+{
+	terminal_item->litrunlen = litrunlen;
+	terminal_item->match_hdr = 0xFF;
 }
 
 static void
@@ -1920,8 +1877,7 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 			{
 				/* There was no match found, or the only match found
 				 * was a distant length 3 match.  Output a literal.  */
-				litrunlen++;
-				c->freqs.main[*in_next++]++;
+				lzx_record_literal(c, *in_next++, &litrunlen);
 				continue;
 			}
 
@@ -2001,8 +1957,8 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 				if (rep_score > cur_score) {
 					/* The next match is better, and it's a
 					 * repeat offset match.  */
-					litrunlen++;
-					c->freqs.main[*(in_next - 2)]++;
+					lzx_record_literal(c, *(in_next - 2),
+							   &litrunlen);
 					cur_len = rep_max_len;
 					cur_offset_data = rep_max_idx;
 					skip_len = cur_len - 1;
@@ -2012,8 +1968,8 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 				if (next_score > cur_score) {
 					/* The next match is better, and it's an
 					 * explicit offset match.  */
-					litrunlen++;
-					c->freqs.main[*(in_next - 2)]++;
+					lzx_record_literal(c, *(in_next - 2),
+							   &litrunlen);
 					cur_len = next_len;
 					cur_offset_data = next_offset_data;
 					cur_score = next_score;
@@ -2025,44 +1981,8 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 			skip_len = cur_len - 2;
 
 		choose_cur_match:
-			{
-				unsigned offset_slot;
-				unsigned v;
-
-				offset_slot = c->offset_slot_fast[cur_offset_data];
-
-				next_item->litrunlen = litrunlen;
-				litrunlen = 0;
-
-				v = cur_len - LZX_MIN_MATCH_LEN;
-
-				next_item->adjusted_length = v;
-
-				next_item->offset_slot_and_adjusted_offset =
-					(cur_offset_data << 8) | offset_slot;
-
-				if (v >= LZX_NUM_PRIMARY_LENS) {
-					c->freqs.len[v - LZX_NUM_PRIMARY_LENS]++;
-					v = LZX_NUM_PRIMARY_LENS;
-				}
-
-				v += offset_slot * (LZX_NUM_PRIMARY_LENS + 1);
-				next_item->match_hdr = v;
-				c->freqs.main[LZX_NUM_CHARS + v]++;
-
-				if (cur_offset_data < LZX_NUM_RECENT_OFFSETS) {
-					swap(recent_offsets[0], recent_offsets[cur_offset_data]);
-				} else {
-					if (offset_slot >= 8)
-						c->freqs.aligned[cur_offset_data & LZX_ALIGNED_OFFSET_BITMASK]++;
-					recent_offsets[2] = recent_offsets[1];
-					recent_offsets[1] = recent_offsets[0];
-					recent_offsets[0] = cur_offset_data - LZX_OFFSET_ADJUSTMENT;
-				}
-				next_item++;
-			}
-
-
+			lzx_record_match(c, cur_len, cur_offset_data,
+					 recent_offsets, &litrunlen, &next_item);
 			hc_matchfinder_skip_positions(&c->hc_mf,
 						      in_begin,
 						      in_next,
@@ -2071,10 +1991,10 @@ lzx_compress_lazy(struct lzx_compressor *c, struct lzx_output_bitstream *os)
 			in_next += skip_len;
 		} while (in_next < in_block_end);
 
-		next_item->litrunlen = litrunlen;
-		next_item->match_hdr = 0xFF;
+		lzx_terminate_block(next_item, litrunlen);
 
 		lzx_finish_block(c, os, in_block_begin, in_next - in_block_begin, 0);
+
 	} while (in_next != in_end);
 }
 
