@@ -104,12 +104,9 @@
 #define HC_MF_HASH3_ORDER	14
 #define HC_MF_HASH4_ORDER	15
 
-#define HC_MF_HASH3_BUCKETS	(1UL << HC_MF_HASH3_ORDER)
-#define HC_MF_HASH4_BUCKETS	(1UL << HC_MF_HASH4_ORDER)
-
 struct hc_matchfinder {
-	pos_t hash3_tab[HC_MF_HASH3_BUCKETS];
-	pos_t hash4_tab[HC_MF_HASH4_BUCKETS];
+	pos_t hash3_tab[1UL << HC_MF_HASH3_ORDER];
+	pos_t hash4_tab[1UL << HC_MF_HASH4_ORDER];
 	pos_t next_tab[];
 } _aligned_attribute(MATCHFINDER_ALIGNMENT);
 
@@ -125,7 +122,7 @@ hc_matchfinder_size(size_t max_bufsize)
 static inline void
 hc_matchfinder_init(struct hc_matchfinder *mf)
 {
-	memset(mf, 0, sizeof(struct hc_matchfinder));
+	memset(mf, 0, sizeof(*mf));
 }
 
 /*
