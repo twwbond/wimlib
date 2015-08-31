@@ -200,8 +200,8 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 	next_seq3 = loaded_u32_to_u24(next_seq4);
 	next_hashes[0] = lz_hash(next_seq3, HC_MF_HASH3_ORDER);
 	next_hashes[1] = lz_hash(next_seq4, HC_MF_HASH4_ORDER);
-	prefetch(&mf->hash3_tab[next_hashes[0]]);
-	prefetch(&mf->hash4_tab[next_hashes[1]]);
+	prefetchw(&mf->hash3_tab[next_hashes[0]]);
+	prefetchw(&mf->hash4_tab[next_hashes[1]]);
 
 	if (best_len < 4) {
 
@@ -346,8 +346,8 @@ hc_matchfinder_skip_positions(struct hc_matchfinder * const restrict mf,
 
 		} while (++in_next != stop_ptr);
 
-		prefetch(&mf->hash3_tab[hash3]);
-		prefetch(&mf->hash4_tab[hash4]);
+		prefetchw(&mf->hash3_tab[hash3]);
+		prefetchw(&mf->hash4_tab[hash4]);
 		next_hashes[0] = hash3;
 		next_hashes[1] = hash4;
 	}
