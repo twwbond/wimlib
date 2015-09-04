@@ -78,6 +78,4 @@
 #define compiler_ffs32(n)	__builtin_ctz(n)
 #define compiler_ffs64(n)	__builtin_ctzll(n)
 
-#define compiler_hint(expr)	if (!(expr)) __builtin_unreachable();
-
 #endif /* _WIMLIB_COMPILER_GCC_H */

@@ -13,12 +13,13 @@
  *
  * This is a Hash Chains (hc) based matchfinder.
  *
- * The data structure is a hash table where each hash bucket contains a linked
- * list (or "chain") of sequences whose first 3 bytes share the same hash code.
- * Each sequence is identified by its starting position in the input buffer.
+ * The main data structure is a hash table where each hash bucket contains a
+ * linked list (or "chain") of sequences whose first 4 bytes share the same hash
+ * code.  Each sequence is identified by its starting position in the input
+ * buffer.
  *
  * The algorithm processes the input buffer sequentially.  At each byte
- * position, the hash code of the first 3 bytes of the sequence beginning at
+ * position, the hash code of the first 4 bytes of the sequence beginning at
  * that position (the sequence being matched against) is computed.  This
  * identifies the hash bucket to use for that position.  Then, this hash
  * bucket's linked list is searched for matches.  Then, a new linked list node
@@ -62,6 +63,13 @@
  *
  *				 Optimizations
  *
+ * The main hash table and chains handle length 4+ matches.  Length 3 matches
+ * are handled by a separate hash table with no chains.  This works well for
+ * typical "greedy" or "lazy"-style compressors, where length 3 matches are
+ * often only helpful if they have small offsets.  Instead of searching a full
+ * chain for length 3+ matches, the algorithm just checks for one close length 3
+ * match, then focuses on finding length 4+ matches.
+ *
  * The longest_match() and skip_positions() functions are inlined into the
  * compressors that use them.  This isn't just about saving the overhead of a
  * function call.  These functions are intended to be called from the inner
@@ -101,12 +109,12 @@
 #include "wimlib/matchfinder_common.h"
 #include "wimlib/unaligned.h"
 
-#define HC_MF_HASH3_ORDER	14
-#define HC_MF_HASH4_ORDER	15
+#define HC_MATCHFINDER_HASH3_ORDER	14
+#define HC_MATCHFINDER_HASH4_ORDER	15
 
 struct hc_matchfinder {
-	pos_t hash3_tab[1UL << HC_MF_HASH3_ORDER];
-	pos_t hash4_tab[1UL << HC_MF_HASH4_ORDER];
+	pos_t hash3_tab[1UL << HC_MATCHFINDER_HASH3_ORDER];
+	pos_t hash4_tab[1UL << HC_MATCHFINDER_HASH4_ORDER];
 	pos_t next_tab[];
 } _aligned_attribute(MATCHFINDER_ALIGNMENT);
 
@@ -145,9 +153,9 @@ hc_matchfinder_init(struct hc_matchfinder *mf)
  * @max_search_depth
  *	Limit on the number of potential matches to consider.  Must be >= 1.
  * @next_hashes
- *	The precomputed hashcodes for the sequences beginning at @in_next.  This
- *	will be updated with the precomputed hashcodes for the sequences
- *	beginning at @in_next + 1.
+ *	The precomputed hashcodes for the sequence beginning at @in_next.  These
+ *	will be used and then updated with the precomputed hashcodes for the
+ *	sequence beginning at @in_next + 1.
  * @offset_ret
  *	If a match is found, its offset is returned in this location.
  *
@@ -165,10 +173,6 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 			     u32 next_hashes[const restrict static 2],
 			     u32 * const restrict offset_ret)
 {
-	/*compiler_hint(cur_pos >= 0 && cur_pos <= UINT32_MAX);*/
-	/*compiler_hint(nice_len <= max_len);*/
-	/*compiler_hint(max_search_depth > 0);*/
-
 	const u8 *in_next = in_begin + cur_pos;
 	u32 depth_remaining = max_search_depth;
 	const u8 *best_matchptr = best_matchptr; /* uninitialized */
@@ -195,8 +199,8 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 
 	next_seq4 = load_u32_unaligned(in_next + 1);
 	next_seq3 = loaded_u32_to_u24(next_seq4);
-	next_hashes[0] = lz_hash(next_seq3, HC_MF_HASH3_ORDER);
-	next_hashes[1] = lz_hash(next_seq4, HC_MF_HASH4_ORDER);
+	next_hashes[0] = lz_hash(next_seq3, HC_MATCHFINDER_HASH3_ORDER);
+	next_hashes[1] = lz_hash(next_seq4, HC_MATCHFINDER_HASH4_ORDER);
 	prefetchw(&mf->hash3_tab[next_hashes[0]]);
 	prefetchw(&mf->hash4_tab[next_hashes[1]]);
 
@@ -301,9 +305,9 @@ out:
  * @in_end
  *	Pointer to the end of the input buffer.
  * @next_hashes
- *	The precomputed hashcodes for the sequences beginning at @in_next.  This
- *	will be updated with the precomputed hashcodes for the sequences
- *	beginning at @in_next + @count.
+ *	The precomputed hashcodes for the sequence beginning at @in_next.  These
+ *	will be used and then updated with the precomputed hashcodes for the
+ *	sequence beginning at @in_next + @count.
  * @count
  *	The number of bytes to advance.  Must be > 0.
  *
@@ -317,11 +321,6 @@ hc_matchfinder_skip_positions(struct hc_matchfinder * const restrict mf,
 			      const u32 count,
 			      u32 next_hashes[const restrict static 2])
 {
-	/*compiler_hint(cur_pos >= 0 && cur_pos <= UINT32_MAX);*/
-	/*compiler_hint(end_pos >= 0 && end_pos <= UINT32_MAX);*/
-	/*compiler_hint(cur_pos + count <= end_pos);*/
-	/*compiler_hint(count > 0);*/
-
 	const u8 *in_next = in_begin + cur_pos;
 	const u8 * const stop_ptr = in_next + count;
 
@@ -338,8 +337,8 @@ hc_matchfinder_skip_positions(struct hc_matchfinder * const restrict mf,
 
 			next_seq4 = load_u32_unaligned(in_next + 1);
 			next_seq3 = loaded_u32_to_u24(next_seq4);
-			hash3 = lz_hash(next_seq3, HC_MF_HASH3_ORDER);
-			hash4 = lz_hash(next_seq4, HC_MF_HASH4_ORDER);
+			hash3 = lz_hash(next_seq3, HC_MATCHFINDER_HASH3_ORDER);
+			hash4 = lz_hash(next_seq4, HC_MATCHFINDER_HASH4_ORDER);
 
 		} while (++in_next != stop_ptr);
 
