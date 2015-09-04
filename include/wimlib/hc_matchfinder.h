@@ -104,10 +104,21 @@
 #ifndef _HC_MATCHFINDER_H
 #define _HC_MATCHFINDER_H
 
+#include <string.h>
+
 #include "wimlib/lz_extend.h"
 #include "wimlib/lz_hash.h"
-#include "wimlib/matchfinder_common.h"
 #include "wimlib/unaligned.h"
+
+#ifndef MATCHFINDER_MAX_WINDOW_ORDER
+#  error "MATCHFINDER_MAX_WINDOW_ORDER must be defined!"
+#endif
+
+#if MATCHFINDER_MAX_WINDOW_ORDER <= 16
+typedef u16 pos_t;
+#else
+typedef u32 pos_t;
+#endif
 
 #define HC_MATCHFINDER_HASH3_ORDER	14
 #define HC_MATCHFINDER_HASH4_ORDER	15
@@ -116,7 +127,7 @@ struct hc_matchfinder {
 	pos_t hash3_tab[1UL << HC_MATCHFINDER_HASH3_ORDER];
 	pos_t hash4_tab[1UL << HC_MATCHFINDER_HASH4_ORDER];
 	pos_t next_tab[];
-} _aligned_attribute(MATCHFINDER_ALIGNMENT);
+};
 
 /* Return the number of bytes that must be allocated for a 'hc_matchfinder' that
  * can work with buffers up to the specified size.  */
@@ -206,7 +217,7 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 
 	if (best_len < 4) {
 
-		if (!matchfinder_node_valid(cur_node3))
+		if (!cur_node3)
 			goto out;
 
 		seq4 = load_u32_unaligned(in_next);
@@ -219,7 +230,7 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 			}
 		}
 
-		if (!matchfinder_node_valid(cur_node4))
+		if (!cur_node4)
 			goto out;
 
 		for (;;) {
@@ -231,7 +242,7 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 
 			/* The first 4 bytes did not match.  Keep trying.  */
 			cur_node4 = mf->next_tab[cur_node4];
-			if (!matchfinder_node_valid(cur_node4) || !--depth_remaining)
+			if (!cur_node4 || !--depth_remaining)
 				goto out;
 		}
 
@@ -241,10 +252,10 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 		if (best_len >= nice_len)
 			goto out;
 		cur_node4 = mf->next_tab[cur_node4];
-		if (!matchfinder_node_valid(cur_node4) || !--depth_remaining)
+		if (!cur_node4 || !--depth_remaining)
 			goto out;
 	} else {
-		if (!matchfinder_node_valid(cur_node4) || best_len >= nice_len)
+		if (!cur_node4 || best_len >= nice_len)
 			goto out;
 	}
 
@@ -268,7 +279,7 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 				break;
 
 			cur_node4 = mf->next_tab[cur_node4];
-			if (!matchfinder_node_valid(cur_node4) || !--depth_remaining)
+			if (!cur_node4 || !--depth_remaining)
 				goto out;
 		}
 
@@ -285,7 +296,7 @@ hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
 				goto out;
 		}
 		cur_node4 = mf->next_tab[cur_node4];
-		if (!matchfinder_node_valid(cur_node4) || !--depth_remaining)
+		if (!cur_node4 || !--depth_remaining)
 			goto out;
 	}
 out:
