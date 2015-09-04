@@ -27,9 +27,8 @@ typedef u16 pos_t;
 typedef u32 pos_t;
 #endif
 
-/* All bits of the position type are needed, so use 0 to mean "out of bounds".
- * This prevents the beginning of the buffer from matching anything; however,
- * this doesn't matter much.  */
+/* Use 0 to mean "out of bounds".  This prevents the beginning of the buffer
+ * from matching anything; however, this doesn't matter much.  */
 
 #define MATCHFINDER_NULL ((pos_t)0)
 
