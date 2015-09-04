@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2012, 2013, 2014 Eric Biggers
+ * Copyright (C) 2012, 2013, 2014, 2015 Eric Biggers
  *
  * This file is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -94,7 +94,7 @@ struct xpress_optimum_node;
 
 #endif /* SUPPORT_NEAR_OPTIMAL_PARSING */
 
-struct xpress_item;
+struct xpress_sequence;
 
 /* The main XPRESS compressor structure  */
 struct xpress_compressor {
@@ -121,7 +121,7 @@ struct xpress_compressor {
 	union {
 		/* Data for greedy or lazy parsing  */
 		struct {
-			struct xpress_item *chosen_items;
+			struct xpress_sequence *chosen_sequences;
 			struct hc_matchfinder hc_mf;
 			/* hc_mf must be last!  */
 		};
@@ -183,10 +183,23 @@ struct xpress_optimum_node {
 
 #endif /* SUPPORT_NEAR_OPTIMAL_PARSING */
 
-struct xpress_item {
+/*
+ * The intermediate representation of a run of literals followed by a match or
+ * end-of-buffer.
+ */
+struct xpress_sequence {
+
+	/* The number of literals which precede the match  */
 	u16 litrunlen;
+
+	/* The match length minus XPRESS_MIN_MATCH_LEN, or 0xFFFF if this was
+	 * the last literal run before end of buffer.  */
 	u16 adjusted_len;
+
+	/* The symbol needed for the match  */
 	u16 sym;
+
+	/* The extra bits needed to represent the match offset  */
 	u16 extra_offset_bits;
 };
 
@@ -348,44 +361,54 @@ xpress_write_extra_length_bytes(struct xpress_output_bitstream *os,
 	}
 }
 
-/* Output a sequence of XPRESS matches and literals.  */
+/* Output the matches and literals.  */
 static void
-xpress_write_items(struct xpress_output_bitstream *os,
-		   const void *in, const struct xpress_item *chosen_items,
-		   const u32 codewords[], const u8 lens[])
+xpress_write_sequences(struct xpress_output_bitstream *os,
+		       const void *in, const struct xpress_sequence *seqs,
+		       const u32 codewords[], const u8 lens[])
 {
 	const u8 *in_next = in;
-	const struct xpress_item *item = chosen_items;
+	const struct xpress_sequence *seq = seqs;
 
 	for (;;) {
 		unsigned litrunlen;
 		unsigned adjusted_len;
 		unsigned sym;
 
-		litrunlen = item->litrunlen;
+		/* Output a run of literals.  */
+		litrunlen = seq->litrunlen;
 		if (litrunlen) {
 			do {
-				xpress_write_bits(os, codewords[*in_next], lens[*in_next]);
+				xpress_write_bits(os, codewords[*in_next],
+						  lens[*in_next]);
 				in_next++;
 			} while (--litrunlen);
 		}
 
-		adjusted_len = item->adjusted_len;
+		adjusted_len = seq->adjusted_len;
 
-		if (adjusted_len == 0xFFFF)
+		if (adjusted_len == 0xFFFF) /* End of buffer?  */
 			break;
 
-		sym = item->sym;
+		/* Output a match.  */
 
+		sym = seq->sym;
+
+		/* The symbol  */
 		xpress_write_bits(os, codewords[sym], lens[sym]);
+
+		/* The extra match length bytes (if any)  */
 		xpress_write_extra_length_bytes(os, adjusted_len);
-		xpress_write_bits(os, item->extra_offset_bits, (sym >> 4) & 0xF);
+
+		/* The extra match offset bits (if any)  */
+		xpress_write_bits(os, seq->extra_offset_bits, (sym >> 4) & 0xF);
 
 		in_next += adjusted_len + XPRESS_MIN_MATCH_LEN;
-		item++;
+		seq++;
 	}
 
-	if (item->sym != 0) /* litrunlen=65536 */
+	/* Handle the case where there are 65536 literals.  */
+	if (seq->sym != 0)
 		xpress_write_bits(os, codewords[*in_next], lens[*in_next]);
 }
 
@@ -395,7 +418,7 @@ xpress_write_items(struct xpress_output_bitstream *os,
  * Follow the minimum cost path in the graph of possible match/literal choices
  * and write out the matches/literals using the specified Huffman code.
  *
- * Note: this is slightly duplicated with xpress_write_items().  However, we
+ * Note: this is slightly duplicated with xpress_write_sequences().  However, we
  * don't want to waste time translating between intermediate match/literal
  * representations.
  */
@@ -404,11 +427,11 @@ xpress_write_item_list(struct xpress_output_bitstream *os,
 		       struct xpress_optimum_node *optimum_nodes,
 		       size_t count, const u32 codewords[], const u8 lens[])
 {
-	struct xpress_optimum_node *cur_optimum_ptr = optimum_nodes;
-	struct xpress_optimum_node *end_optimum_ptr = optimum_nodes + count;
+	struct xpress_optimum_node *cur_node = optimum_nodes;
+	struct xpress_optimum_node *end_node = optimum_nodes + count;
 	do {
-		unsigned length = cur_optimum_ptr->item & OPTIMUM_LEN_MASK;
-		unsigned offset = cur_optimum_ptr->item >> OPTIMUM_OFFSET_SHIFT;
+		unsigned length = cur_node->item & OPTIMUM_LEN_MASK;
+		unsigned offset = cur_node->item >> OPTIMUM_OFFSET_SHIFT;
 
 		if (length == 1) {
 			/* Literal  */
@@ -432,20 +455,20 @@ xpress_write_item_list(struct xpress_output_bitstream *os,
 			xpress_write_bits(os, offset - (1U << log2_offset),
 					  log2_offset);
 		}
-		cur_optimum_ptr += length;
-	} while (cur_optimum_ptr != end_optimum_ptr);
+		cur_node += length;
+	} while (cur_node != end_node);
 }
 #endif /* SUPPORT_NEAR_OPTIMAL_PARSING */
 
 /*
- * Output the XPRESS-compressed data, given the sequence of match/literal
- * "items" that was chosen to represent the input data.
+ * Output the XPRESS-compressed data, given the matches and literals that were
+ * chosen to represent the input data.
  *
- * If @near_optimal is %false, then the items are taken from the array
- * c->chosen_items[0...count].
+ * If @near_optimal is %false, then the matches and literals are taken from the
+ * array c->chosen_sequences.
  *
- * If @near_optimal is %true, then the items are taken from the minimum cost
- * path stored in c->optimum_nodes[0...count].
+ * If @near_optimal is %true, then the matches and literals are taken from the
+ * minimum cost path stored in c->optimum_nodes[0...count].
  */
 static size_t
 xpress_write(struct xpress_compressor *c, void *out, size_t out_nbytes_avail,
@@ -466,7 +489,7 @@ xpress_write(struct xpress_compressor *c, void *out, size_t out_nbytes_avail,
 
 	xpress_init_output(&os, cptr, out_nbytes_avail - XPRESS_NUM_SYMBOLS / 2);
 
-	/* Output the Huffman-encoded items.  */
+	/* Output the Huffman-encoded matches and literals.  */
 #if SUPPORT_NEAR_OPTIMAL_PARSING
 	if (near_optimal) {
 		xpress_write_item_list(&os, c->optimum_nodes, in_nbytes,
@@ -475,8 +498,8 @@ xpress_write(struct xpress_compressor *c, void *out, size_t out_nbytes_avail,
 	} else
 #endif
 	{
-		xpress_write_items(&os, in, c->chosen_items,
-				   c->codewords, c->lens);
+		xpress_write_sequences(&os, in, c->chosen_sequences,
+				       c->codewords, c->lens);
 	}
 
 	/* Write the end-of-data symbol (needed for MS compatibility)  */
@@ -492,6 +515,8 @@ xpress_write(struct xpress_compressor *c, void *out, size_t out_nbytes_avail,
 	return out_size + XPRESS_NUM_SYMBOLS / 2;
 }
 
+/* Tally the Huffman symbol for a literal and increment the literal run length.
+ */
 static inline void
 xpress_record_literal(struct xpress_compressor *c, u8 literal, u32 *litrunlen_p)
 {
@@ -499,47 +524,59 @@ xpress_record_literal(struct xpress_compressor *c, u8 literal, u32 *litrunlen_p)
 	++*litrunlen_p;
 }
 
+/* Tally the Huffman symbol for a match, and save the match data and the length
+ * of the preceding literal run in the next xpress_sequence.  */
 static inline void
 xpress_record_match(struct xpress_compressor *c, unsigned length, unsigned offset,
-		    u32 *litrunlen_p, struct xpress_item **next_item_p)
+		    u32 *litrunlen_p, struct xpress_sequence **next_seq_p)
 {
 	u32 litrunlen = *litrunlen_p;
-	struct xpress_item *next_item = *next_item_p;
+	struct xpress_sequence *next_seq = *next_seq_p;
 	unsigned v;
 	unsigned log2_offset;
 
-	next_item->litrunlen = litrunlen;
+	/* Save the literal run length.  */
+	next_seq->litrunlen = litrunlen;
 
+	/* Save the adjusted match length.  */
 	v = length - XPRESS_MIN_MATCH_LEN;
-	next_item->adjusted_len = v;
+	next_seq->adjusted_len = v;
 
-	if (v > 0xF)
-		v = 0xF;
-
+	/* Compute the log base 2 of the match ofset.  */
 	log2_offset = fls32(offset);
 
-	next_item->extra_offset_bits = offset - (1U << log2_offset);
+	/* Save the extra match offset bits.  */
+	next_seq->extra_offset_bits = offset - (1U << log2_offset);
 
+	/* Compute the symbol.  */
+	if (v > 0xF) /* Extra length bytes required?  */
+		v = 0xF;
 	v |= log2_offset << 4;
 	v |= XPRESS_NUM_CHARS;
 
-	next_item->sym = v;
+	/* Save the symbol.  */
+	next_seq->sym = v;
+
+	/* Tally the symbol.  */
 	c->freqs[v]++;
 
+	/* Reset the literal run length and advance to the next sequence.  */
 	*litrunlen_p = 0;
-	*next_item_p = next_item + 1;
+	*next_seq_p = next_seq + 1;
 }
 
+/* Finish the last xpress_sequence.  The last xpress_sequence is just a literal
+ * run; there is no match.  This literal run may be empty.  */
 static inline void
-xpress_terminate_items(struct xpress_item *terminal_item, u32 litrunlen)
+xpress_finish_sequence(struct xpress_sequence *last_seq, u32 litrunlen)
 {
-	/* Special length value to mark last item  */
-	terminal_item->adjusted_len = 0xFFFF;
+	/* Special length value to mark last sequence  */
+	last_seq->adjusted_len = 0xFFFF;
 
 	/* If litrunlen == 65536, then cap it to 65535 to make it fit in the
 	 * 16-bit location, and set 'sym' to 1 to indicate overflow.  */
-	terminal_item->litrunlen = litrunlen - (litrunlen >> 16);
-	terminal_item->sym = litrunlen >> 16;
+	last_seq->litrunlen = litrunlen - (litrunlen >> 16);
+	last_seq->sym = litrunlen >> 16;
 }
 
 /*
@@ -555,7 +592,7 @@ xpress_compress_greedy(struct xpress_compressor * restrict c,
 	const u8 * const in_begin = in;
 	const u8 *	 in_next = in_begin;
 	const u8 * const in_end = in_begin + in_nbytes;
-	struct xpress_item *next_item = c->chosen_items;
+	struct xpress_sequence *next_seq = c->chosen_sequences;
 	u32 len_3_too_far;
 	u32 litrunlen = 0;
 	u32 next_hashes[2] = {};
@@ -583,7 +620,7 @@ xpress_compress_greedy(struct xpress_compressor * restrict c,
 		if (length >= XPRESS_MIN_MATCH_LEN &&
 		    !(length == XPRESS_MIN_MATCH_LEN && offset >= len_3_too_far))
 		{
-			xpress_record_match(c, length, offset, &litrunlen, &next_item);
+			xpress_record_match(c, length, offset, &litrunlen, &next_seq);
 			in_next = hc_matchfinder_skip_positions(&c->hc_mf,
 								in_begin,
 								in_next + 1 - in_begin,
@@ -595,7 +632,7 @@ xpress_compress_greedy(struct xpress_compressor * restrict c,
 		}
 	} while (in_next != in_end);
 
-	xpress_terminate_items(next_item, litrunlen);
+	xpress_finish_sequence(next_seq, litrunlen);
 
 	return xpress_write(c, out, out_nbytes_avail, in, in_nbytes, false);
 }
@@ -613,7 +650,7 @@ xpress_compress_lazy(struct xpress_compressor * restrict c,
 	const u8 * const in_begin = in;
 	const u8 *	 in_next = in_begin;
 	const u8 * const in_end = in_begin + in_nbytes;
-	struct xpress_item *next_item = c->chosen_items;
+	struct xpress_sequence *next_seq = c->chosen_sequences;
 	u32 len_3_too_far;
 	u32 litrunlen = 0;
 	u32 next_hashes[2] = {};
@@ -702,7 +739,7 @@ xpress_compress_lazy(struct xpress_compressor * restrict c,
 		 * the current match.  */
 		skip_len = cur_len - 2;
 	choose_cur_match:
-		xpress_record_match(c, cur_len, cur_offset, &litrunlen, &next_item);
+		xpress_record_match(c, cur_len, cur_offset, &litrunlen, &next_seq);
 		in_next = hc_matchfinder_skip_positions(&c->hc_mf,
 							in_begin,
 							in_next - in_begin,
@@ -711,7 +748,7 @@ xpress_compress_lazy(struct xpress_compressor * restrict c,
 							next_hashes);
 	} while (in_next != in_end);
 
-	xpress_terminate_items(next_item, litrunlen);
+	xpress_finish_sequence(next_seq, litrunlen);
 
 	return xpress_write(c, out, out_nbytes_avail, in, in_nbytes, false);
 }
@@ -747,13 +784,13 @@ xpress_update_costs(struct xpress_compressor *c)
  */
 static void
 xpress_tally_item_list(struct xpress_compressor *c,
-		       struct xpress_optimum_node *end_optimum_ptr)
+		       struct xpress_optimum_node *end_node)
 {
-	struct xpress_optimum_node *cur_optimum_ptr = c->optimum_nodes;
+	struct xpress_optimum_node *cur_node = c->optimum_nodes;
 
 	do {
-		unsigned length = cur_optimum_ptr->item & OPTIMUM_LEN_MASK;
-		unsigned offset = cur_optimum_ptr->item >> OPTIMUM_OFFSET_SHIFT;
+		unsigned length = cur_node->item & OPTIMUM_LEN_MASK;
+		unsigned offset = cur_node->item >> OPTIMUM_OFFSET_SHIFT;
 
 		if (length == 1) {
 			/* Literal  */
@@ -774,8 +811,8 @@ xpress_tally_item_list(struct xpress_compressor *c,
 
 			c->freqs[sym]++;
 		}
-		cur_optimum_ptr += length;
-	} while (cur_optimum_ptr != end_optimum_ptr);
+		cur_node += length;
+	} while (cur_node != end_node);
 }
 
 /*
@@ -794,10 +831,10 @@ static void
 xpress_find_min_cost_path(struct xpress_compressor *c, size_t in_nbytes,
 			  struct lz_match *end_cache_ptr)
 {
-	struct xpress_optimum_node *cur_optimum_ptr = c->optimum_nodes + in_nbytes;
+	struct xpress_optimum_node *cur_node = c->optimum_nodes + in_nbytes;
 	struct lz_match *cache_ptr = end_cache_ptr;
 
-	cur_optimum_ptr->cost_to_end = 0;
+	cur_node->cost_to_end = 0;
 	do {
 		unsigned literal;
 		u32 best_item;
@@ -806,7 +843,7 @@ xpress_find_min_cost_path(struct xpress_compressor *c, size_t in_nbytes,
 		struct lz_match *match;
 		unsigned len;
 
-		cur_optimum_ptr--;
+		cur_node--;
 		cache_ptr--;
 
 		literal = cache_ptr->offset;
@@ -814,14 +851,14 @@ xpress_find_min_cost_path(struct xpress_compressor *c, size_t in_nbytes,
 		/* Consider coding a literal.  */
 		best_item = ((u32)literal << OPTIMUM_OFFSET_SHIFT) | 1;
 		best_cost_to_end = c->costs[literal] +
-				   (cur_optimum_ptr + 1)->cost_to_end;
+				   (cur_node + 1)->cost_to_end;
 
 		num_matches = cache_ptr->length;
 
 		if (num_matches == 0) {
 			/* No matches; the only choice is the literal.  */
-			cur_optimum_ptr->cost_to_end = best_cost_to_end;
-			cur_optimum_ptr->item = best_item;
+			cur_node->cost_to_end = best_cost_to_end;
+			cur_node->item = best_item;
 			continue;
 		}
 
@@ -856,7 +893,7 @@ xpress_find_min_cost_path(struct xpress_compressor *c, size_t in_nbytes,
 					      ((log2_offset << 4) | len_hdr);
 					cost_to_end =
 						offset_cost + c->costs[sym] +
-						(cur_optimum_ptr + len)->cost_to_end;
+						(cur_node + len)->cost_to_end;
 					if (cost_to_end < best_cost_to_end) {
 						best_cost_to_end = cost_to_end;
 						best_item =
@@ -887,7 +924,7 @@ xpress_find_min_cost_path(struct xpress_compressor *c, size_t in_nbytes,
 					      ((log2_offset << 4) | len_hdr);
 					cost_to_end =
 						offset_cost + c->costs[sym] +
-						(cur_optimum_ptr + len)->cost_to_end;
+						(cur_node + len)->cost_to_end;
 					if (adjusted_len >= 0xF) {
 						cost_to_end += 8;
 						if (adjusted_len - 0xF >= 0xFF)
@@ -903,9 +940,9 @@ xpress_find_min_cost_path(struct xpress_compressor *c, size_t in_nbytes,
 			} while (++match != cache_ptr);
 		}
 		cache_ptr -= num_matches;
-		cur_optimum_ptr->cost_to_end = best_cost_to_end;
-		cur_optimum_ptr->item = best_item;
-	} while (cur_optimum_ptr != c->optimum_nodes);
+		cur_node->cost_to_end = best_cost_to_end;
+		cur_node->item = best_item;
+	} while (cur_node != c->optimum_nodes);
 }
 
 /*
@@ -1062,8 +1099,9 @@ xpress_get_needed_memory(size_t max_bufsize, unsigned compression_level,
 
 	if (compression_level < MIN_LEVEL_FOR_NEAR_OPTIMAL ||
 	    !SUPPORT_NEAR_OPTIMAL_PARSING) {
-		/* chosen_items  */
-		size += max_bufsize * sizeof(struct xpress_item);
+		/* chosen_sequences  */
+		size += (1 + max_bufsize / XPRESS_MIN_MATCH_LEN) *
+			sizeof(struct xpress_sequence);
 	}
 #if SUPPORT_NEAR_OPTIMAL_PARSING
 	else {
@@ -1096,9 +1134,9 @@ xpress_create_compressor(size_t max_bufsize, unsigned compression_level,
 	    !SUPPORT_NEAR_OPTIMAL_PARSING)
 	{
 
-		c->chosen_items = MALLOC((1 + max_bufsize / XPRESS_MIN_MATCH_LEN) *
-					 sizeof(struct xpress_item));
-		if (!c->chosen_items)
+		c->chosen_sequences = MALLOC((1 + max_bufsize / XPRESS_MIN_MATCH_LEN) *
+					     sizeof(struct xpress_sequence));
+		if (!c->chosen_sequences)
 			goto oom1;
 
 		if (compression_level < 30) {
@@ -1183,7 +1221,7 @@ xpress_free_compressor(void *_c)
 		FREE(c->match_cache);
 	} else
 #endif
-		FREE(c->chosen_items);
+		FREE(c->chosen_sequences);
 	ALIGNED_FREE(c);
 }
 
