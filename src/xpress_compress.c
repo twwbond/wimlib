@@ -183,20 +183,17 @@ struct xpress_optimum_node {
 
 #endif /* SUPPORT_NEAR_OPTIMAL_PARSING */
 
-/*
- * The intermediate representation of a run of literals followed by a match or
- * end-of-buffer.
- */
+/* Represents a run of literals followed by a match or end-of-buffer.  */
 struct xpress_sequence {
 
-	/* The number of literals which precede the match  */
+	/* The number of literals in the run  */
 	u16 litrunlen;
 
 	/* The match length minus XPRESS_MIN_MATCH_LEN, or 0xFFFF if this was
-	 * the last literal run before end of buffer.  */
+	 * the last literal run before end of buffer  */
 	u16 adjusted_len;
 
-	/* The symbol needed for the match  */
+	/* The symbol for the match  */
 	u16 sym;
 
 	/* The extra bits needed to represent the match offset  */
@@ -394,16 +391,16 @@ xpress_write_sequences(struct xpress_output_bitstream *os,
 
 		sym = seq->sym;
 
-		/* The symbol  */
+		/* the symbol  */
 		xpress_write_bits(os, codewords[sym], lens[sym]);
 
-		/* The extra match length bytes (if any)  */
+		/* the extra match length bytes (if any)  */
 		xpress_write_extra_length_bytes(os, adjusted_len);
 
-		/* The extra match offset bits (if any)  */
+		/* the extra match offset bits (if any)  */
 		xpress_write_bits(os, seq->extra_offset_bits, (sym >> 4) & 0xF);
 
-		in_next += adjusted_len + XPRESS_MIN_MATCH_LEN;
+		in_next += (u32)adjusted_len + XPRESS_MIN_MATCH_LEN;
 		seq++;
 	}
 
@@ -468,7 +465,7 @@ xpress_write_item_list(struct xpress_output_bitstream *os,
  * array c->chosen_sequences.
  *
  * If @near_optimal is %true, then the matches and literals are taken from the
- * minimum cost path stored in c->optimum_nodes[0...count].
+ * minimum cost path stored in c->optimum_nodes[0...in_nbytes].
  */
 static size_t
 xpress_write(struct xpress_compressor *c, void *out, size_t out_nbytes_avail,
@@ -524,7 +521,7 @@ xpress_record_literal(struct xpress_compressor *c, u8 literal, u32 *litrunlen_p)
 	++*litrunlen_p;
 }
 
-/* Tally the Huffman symbol for a match, and save the match data and the length
+/* Tally the Huffman symbol for a match and save the match data and the length
  * of the preceding literal run in the next xpress_sequence.  */
 static inline void
 xpress_record_match(struct xpress_compressor *c, unsigned length, unsigned offset,
@@ -532,33 +529,31 @@ xpress_record_match(struct xpress_compressor *c, unsigned length, unsigned offse
 {
 	u32 litrunlen = *litrunlen_p;
 	struct xpress_sequence *next_seq = *next_seq_p;
-	unsigned v;
+	unsigned adjusted_len;
 	unsigned log2_offset;
+	unsigned sym;
 
 	/* Save the literal run length.  */
 	next_seq->litrunlen = litrunlen;
 
 	/* Save the adjusted match length.  */
-	v = length - XPRESS_MIN_MATCH_LEN;
-	next_seq->adjusted_len = v;
+	adjusted_len = length - XPRESS_MIN_MATCH_LEN;
+	next_seq->adjusted_len = adjusted_len;
 
-	/* Compute the log base 2 of the match ofset.  */
+	/* Compute the log base 2 of the match offset.  */
 	log2_offset = fls32(offset);
 
 	/* Save the extra match offset bits.  */
 	next_seq->extra_offset_bits = offset - (1U << log2_offset);
 
 	/* Compute the symbol.  */
-	if (v > 0xF) /* Extra length bytes required?  */
-		v = 0xF;
-	v |= log2_offset << 4;
-	v |= XPRESS_NUM_CHARS;
+	sym = XPRESS_NUM_CHARS | (log2_offset << 4) | min(adjusted_len, 0xF);
 
 	/* Save the symbol.  */
-	next_seq->sym = v;
+	next_seq->sym = sym;
 
 	/* Tally the symbol.  */
-	c->freqs[v]++;
+	c->freqs[sym]++;
 
 	/* Reset the literal run length and advance to the next sequence.  */
 	*litrunlen_p = 0;
