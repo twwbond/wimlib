@@ -38,8 +38,12 @@
 #  define unlikely(expr)	(expr)
 #endif
 
-#ifndef prefetch
-#  define prefetch(addr)
+#ifndef prefetchr
+#  define prefetchr(addr)
+#endif
+
+#ifndef prefetchw
+#  define prefetchw(addr)
 #endif
 
 #ifndef _cold_attribute
