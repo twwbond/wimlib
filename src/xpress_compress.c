@@ -400,7 +400,7 @@ xpress_write_extra_length_bytes(struct xpress_output_bitstream *os,
 }
 
 /* Output the matches and literals.  */
-static noinline void
+static void
 xpress_write_sequences(struct xpress_output_bitstream * restrict __os,
 		       const void * restrict in, const struct xpress_sequence * restrict seqs,
 		       const u32 codewords[ restrict ], const u8 lens[ restrict ])
