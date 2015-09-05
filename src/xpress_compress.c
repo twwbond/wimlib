@@ -489,8 +489,9 @@ enter_fastloop:
 		litrunlen = seq->litrunlen;
 		if (litrunlen) {
 			do {
-				xpress_write_bits(os, codewords[*in_next],
-						  lens[*in_next]);
+				xpress_add_bits(os, codewords[*in_next],
+						lens[*in_next]);
+				xpress_flush_bits_fast(os, 1);
 				in_next++;
 			} while (--litrunlen);
 		}
@@ -499,8 +500,11 @@ enter_fastloop:
 
 		adjusted_len = seq->adjusted_len;
 
-		if (adjusted_len >= 0xF)
+		if (adjusted_len >= 0xF) {
+			os->next_bits2 = os->next_bits + 2;
+			os->next_byte = os->next_bits + 4;
 			goto enter_slowloop;
+		}
 
 		sym = seq->sym;
 
@@ -510,7 +514,7 @@ enter_fastloop:
 		/* the extra match offset bits (if any)  */
 		xpress_add_bits(os, seq->extra_offset_bits, (sym >> 4) & 0xF);
 
-		xpress_flush_bits(os, 2);
+		xpress_flush_bits_fast(os, 2);
 
 		in_next += (u32)adjusted_len + XPRESS_MIN_MATCH_LEN;
 		seq++;
