@@ -287,30 +287,26 @@ xpress_add_bits(struct xpress_output_bitstream *os,
 static inline void
 xpress_flush_bits(struct xpress_output_bitstream *os, int level)
 {
+	if (os->end - os->next_bits < 6)
+		return;
 	if (level >= 1 && os->bitcount > 16) {
 		os->bitcount -= 16;
-		if (os->end - os->next_byte >= 2) {
+		put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next_bits);
+		os->next_bits = os->next_bits2;
+		os->next_bits2 = os->next_byte;
+		os->next_byte += 2;
+		if (level >= 2 && os->bitcount > 16) {
+			os->bitcount -= 16;
 			put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next_bits);
 			os->next_bits = os->next_bits2;
 			os->next_bits2 = os->next_byte;
 			os->next_byte += 2;
-		}
-		if (level >= 2 && os->bitcount > 16) {
-			os->bitcount -= 16;
-			if (os->end - os->next_byte >= 2) {
+			if (level >= 3 && os->bitcount > 16) {
+				os->bitcount -= 16;
 				put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next_bits);
 				os->next_bits = os->next_bits2;
 				os->next_bits2 = os->next_byte;
 				os->next_byte += 2;
-			}
-			if (level >= 3 && os->bitcount > 16) {
-				os->bitcount -= 16;
-				if (os->end - os->next_byte >= 2) {
-					put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next_bits);
-					os->next_bits = os->next_bits2;
-					os->next_bits2 = os->next_byte;
-					os->next_byte += 2;
-				}
 			}
 		}
 	}
@@ -319,24 +315,20 @@ xpress_flush_bits(struct xpress_output_bitstream *os, int level)
 static inline void
 xpress_flush_bits_fast(struct xpress_output_bitstream *os, int level)
 {
+	if (os->end - os->next_bits < 6)
+		return;
 	if (level >= 1 && os->bitcount > 16) {
 		os->bitcount -= 16;
-		if (os->end - os->next_bits >= 6) {
-			put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next_bits);
-			os->next_bits += 2;
-		}
+		put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next_bits);
+		os->next_bits += 2;
 		if (level >= 2 && os->bitcount > 16) {
 			os->bitcount -= 16;
-			if (os->end - os->next_bits >= 6) {
-				put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next_bits);
-				os->next_bits += 2;
-			}
+			put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next_bits);
+			os->next_bits += 2;
 			if (level >= 3 && os->bitcount > 16) {
 				os->bitcount -= 16;
-				if (os->end - os->next_bits >= 6) {
-					put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next_bits);
-					os->next_bits += 2;
-				}
+				put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next_bits);
+				os->next_bits += 2;
 			}
 		}
 	}
@@ -388,7 +380,7 @@ xpress_write_u16(struct xpress_output_bitstream *os, u16 v)
 static size_t
 xpress_flush_output(struct xpress_output_bitstream *os)
 {
-	if (os->end - os->next_byte < 2)
+	if (os->end - os->next_bits < 6)
 		return 0;
 
 	put_unaligned_u16_le(os->bitbuf << (16 - os->bitcount), os->next_bits);
@@ -412,7 +404,7 @@ xpress_write_extra_length_bytes(struct xpress_output_bitstream *os,
 }
 
 /* Output the matches and literals.  */
-static void
+static noinline void
 xpress_write_sequences(struct xpress_output_bitstream * restrict __os,
 		       const void * restrict in, const struct xpress_sequence * restrict seqs,
 		       const u32 codewords[ restrict ], const u8 lens[ restrict ])
@@ -488,12 +480,27 @@ enter_fastloop:
 		/* Output a run of literals.  */
 		litrunlen = seq->litrunlen;
 		if (litrunlen) {
-			do {
-				xpress_add_bits(os, codewords[*in_next],
-						lens[*in_next]);
-				xpress_flush_bits_fast(os, 1);
+			while (litrunlen >= 3) {
+				unsigned lit0 = in_next[0];
+				unsigned lit1 = in_next[1];
+				unsigned lit2 = in_next[2];
+				xpress_add_bits(os, codewords[lit0], lens[lit0]);
+				xpress_add_bits(os, codewords[lit1], lens[lit1]);
+				xpress_add_bits(os, codewords[lit2], lens[lit2]);
+				xpress_flush_bits_fast(os, 3);
+				litrunlen -= 3;
+				in_next += 3;
+			}
+			if (litrunlen--) {
+				xpress_add_bits(os, codewords[*in_next], lens[*in_next]);
 				in_next++;
-			} while (--litrunlen);
+				if (litrunlen--) {
+					xpress_add_bits(os, codewords[*in_next], lens[*in_next]);
+					xpress_flush_bits_fast(os, 2);
+					in_next++;
+				} else
+					xpress_flush_bits_fast(os, 1);
+			}
 		}
 
 		/* Output a match.  */
