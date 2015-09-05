@@ -315,23 +315,19 @@ xpress_flush_bits(struct xpress_output_bitstream *os, int level)
 static inline void
 xpress_flush_bits_fast(struct xpress_output_bitstream *os, int level)
 {
-	if (os->end - os->next_bits < 6)
+	if (unlikely(os->end - os->next_bits < 6))
 		return;
-	if (level >= 1 && os->bitcount > 16) {
-		os->bitcount -= 16;
-		put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next_bits);
-		os->next_bits += 2;
-		if (level >= 2 && os->bitcount > 16) {
-			os->bitcount -= 16;
-			put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next_bits);
-			os->next_bits += 2;
-			if (level >= 3 && os->bitcount > 16) {
-				os->bitcount -= 16;
-				put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next_bits);
-				os->next_bits += 2;
-			}
-		}
+	const unsigned n = (os->bitcount - 1) >> 4;
+	switch (level) {
+	case 3:
+		put_unaligned_u16_le(os->bitbuf >> (os->bitcount - 48), os->next_bits + 4);
+	case 2:
+		put_unaligned_u16_le(os->bitbuf >> (os->bitcount - 32), os->next_bits + 2);
+	case 1:
+		put_unaligned_u16_le(os->bitbuf >> (os->bitcount - 16), os->next_bits + 0);
 	}
+	os->next_bits += n << 1;
+	os->bitcount -= n << 4;
 }
 
 /*
