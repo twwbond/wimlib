@@ -316,6 +316,32 @@ xpress_flush_bits(struct xpress_output_bitstream *os, int level)
 	}
 }
 
+static inline void
+xpress_flush_bits_fast(struct xpress_output_bitstream *os, int level)
+{
+	if (level >= 1 && os->bitcount > 16) {
+		os->bitcount -= 16;
+		if (os->end - os->next_bits >= 6) {
+			put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next_bits);
+			os->next_bits += 2;
+		}
+		if (level >= 2 && os->bitcount > 16) {
+			os->bitcount -= 16;
+			if (os->end - os->next_bits >= 6) {
+				put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next_bits);
+				os->next_bits += 2;
+			}
+			if (level >= 3 && os->bitcount > 16) {
+				os->bitcount -= 16;
+				if (os->end - os->next_bits >= 6) {
+					put_unaligned_u16_le(os->bitbuf >> os->bitcount, os->next_bits);
+					os->next_bits += 2;
+				}
+			}
+		}
+	}
+}
+
 /*
  * Write some bits to the output bitstream.
  *
@@ -395,27 +421,20 @@ xpress_write_sequences(struct xpress_output_bitstream * restrict __os,
 	struct xpress_output_bitstream *os = &_os;
 	const u8 *in_next = in;
 	const struct xpress_sequence *seq = seqs;
+	unsigned litrunlen;
+	unsigned adjusted_len;
+	unsigned sym;
 
 	for (;;) {
-		unsigned litrunlen;
-		unsigned adjusted_len;
-		unsigned sym;
 
 		/* Output a run of literals.  */
 		litrunlen = seq->litrunlen;
 		if (litrunlen) {
-			while (litrunlen >= 2) {
-				xpress_add_bits(os, codewords[in_next[0]], lens[in_next[0]]);
-				xpress_add_bits(os, codewords[in_next[1]], lens[in_next[1]]);
-				in_next += 2;
-				litrunlen -= 2;
-				xpress_flush_bits(os, 2);
-			}
-			if (litrunlen--) {
+			do {
 				xpress_write_bits(os, codewords[*in_next],
 						  lens[*in_next]);
 				in_next++;
-			}
+			} while (--litrunlen);
 		}
 
 		/* Output a match.  */
@@ -423,9 +442,9 @@ xpress_write_sequences(struct xpress_output_bitstream * restrict __os,
 		adjusted_len = seq->adjusted_len;
 
 		if (adjusted_len >= 0xF) {
-
+enter_slowloop:
 			if (adjusted_len == 0xFFFF)
-				break;
+				goto out;
 
 			sym = seq->sym;
 
@@ -457,11 +476,47 @@ xpress_write_sequences(struct xpress_output_bitstream * restrict __os,
 			xpress_flush_bits(os, 2);
 		}
 
+		in_next += (u32)adjusted_len + XPRESS_MIN_MATCH_LEN;
+		seq++;
+
+		if (os->next_byte == os->next_bits + 4)
+			goto enter_fastloop;
+	}
+
+	for (;;) {
+enter_fastloop:
+		/* Output a run of literals.  */
+		litrunlen = seq->litrunlen;
+		if (litrunlen) {
+			do {
+				xpress_write_bits(os, codewords[*in_next],
+						  lens[*in_next]);
+				in_next++;
+			} while (--litrunlen);
+		}
+
+		/* Output a match.  */
+
+		adjusted_len = seq->adjusted_len;
+
+		if (adjusted_len >= 0xF)
+			goto enter_slowloop;
+
+		sym = seq->sym;
+
+		/* the symbol  */
+		xpress_add_bits(os, codewords[sym], lens[sym]);
+
+		/* the extra match offset bits (if any)  */
+		xpress_add_bits(os, seq->extra_offset_bits, (sym >> 4) & 0xF);
+
+		xpress_flush_bits(os, 2);
 
 		in_next += (u32)adjusted_len + XPRESS_MIN_MATCH_LEN;
 		seq++;
 	}
 
+out:
 	/* Handle the case where there are 65536 literals.  */
 	if (seq->sym != 0)
 		xpress_write_bits(os, codewords[*in_next], lens[*in_next]);
