@@ -1242,7 +1242,7 @@ lzx_find_min_cost_path(struct lzx_compressor * const restrict c,
 	 * it is no longer needed.  */
 	struct lzx_lru_queue queues[512];
 
-	BUILD_BUG_ON(ARRAY_LEN(queues) < LZX_MAX_MATCH_LEN + 1);
+	STATIC_ASSERT(ARRAY_LEN(queues) >= LZX_MAX_MATCH_LEN + 1);
 #define QUEUE(in) (queues[(uintptr_t)(in) % ARRAY_LEN(queues)])
 
 	/* Initially, the cost to reach each node is "infinity".  */
@@ -1294,7 +1294,7 @@ lzx_find_min_cost_path(struct lzx_compressor * const restrict c,
 			matchptr = in_next - lzx_lru_queue_R0(QUEUE(in_next));
 			if (load_u16_unaligned(matchptr) != load_u16_unaligned(in_next))
 				goto R0_done;
-			BUILD_BUG_ON(LZX_MIN_MATCH_LEN != 2);
+			STATIC_ASSERT(LZX_MIN_MATCH_LEN == 2);
 			do {
 				u32 cost = cur_node->cost +
 					   c->costs.match_cost[0][
@@ -1479,7 +1479,7 @@ lzx_set_default_costs(struct lzx_compressor *c, const u8 *block, u32 block_size)
 	unsigned num_used_bytes;
 
 	/* The costs below are hard coded to use a scaling factor of 16.  */
-	BUILD_BUG_ON(LZX_BIT_COST != 16);
+	STATIC_ASSERT(LZX_BIT_COST == 16);
 
 	/*
 	 * Heuristics:
@@ -1734,7 +1734,7 @@ lzx_find_longest_repeat_offset_match(const u8 * const in_next,
 				     struct lzx_lru_queue queue,
 				     unsigned *rep_max_idx_ret)
 {
-	BUILD_BUG_ON(LZX_NUM_RECENT_OFFSETS != 3);
+	STATIC_ASSERT(LZX_NUM_RECENT_OFFSETS == 3);
 	LZX_ASSERT(bytes_remaining >= 2);
 
 	const unsigned max_len = min(bytes_remaining, LZX_MAX_MATCH_LEN);
