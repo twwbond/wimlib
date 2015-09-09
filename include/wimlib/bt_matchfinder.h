@@ -11,8 +11,8 @@
  *
  * This is a Binary Trees (bt) based matchfinder.
  *
- * The data structure is a hash table where each hash bucket contains a binary
- * tree of sequences whose first 3 bytes share the same hash code.  Each
+ * The primary data structure is a hash table where each hash bucket contains a
+ * binary tree of sequences whose first 3 bytes share the same hash code.  Each
  * sequence is identified by its starting position in the input buffer.  Each
  * binary tree is always sorted such that each left child represents a sequence
  * lexicographically lesser than its parent and each right child represents a
@@ -51,8 +51,8 @@
 #include "wimlib/lz_extend.h"
 #include "wimlib/lz_hash.h"
 
-#undef BT_MATCHFINDER_HASH_ORDER
-#define BT_MATCHFINDER_HASH_ORDER 16
+#undef BT_MATCHFINDER_HASH3_ORDER
+#define BT_MATCHFINDER_HASH3_ORDER 16
 
 #undef TEMPLATED
 #define TEMPLATED(name)		CONCAT(name, MF_SUFFIX)
@@ -76,16 +76,13 @@ struct lz_match {
 	u32 offset;
 };
 
-static inline u32
-bt_matchfinder_hash_3_bytes(const u8 *in_next)
-{
-	return lz_hash_3_bytes(in_next, BT_MATCHFINDER_HASH_ORDER);
-}
-
 #endif /* _WIMLIB_BT_MATCHFINDER_H */
 
 struct TEMPLATED(bt_matchfinder) {
-	pos_t hash_tab[1UL << BT_MATCHFINDER_HASH_ORDER];
+#ifdef BT_MATCHFINDER_HASH2_ORDER
+	pos_t hash2_tab[1UL << BT_MATCHFINDER_HASH2_ORDER];
+#endif
+	pos_t hash3_tab[1UL << BT_MATCHFINDER_HASH3_ORDER];
 	pos_t child_tab[];
 };
 
@@ -106,21 +103,136 @@ TEMPLATED(bt_matchfinder_init)(struct TEMPLATED(bt_matchfinder) *mf)
 }
 
 static inline pos_t *
-TEMPLATED(bt_child)(struct TEMPLATED(bt_matchfinder) *mf, pos_t node, int offset)
+TEMPLATED(bt_left_child)(struct TEMPLATED(bt_matchfinder) *mf, u32 node)
 {
-	return &mf->child_tab[(node << 1) + offset];
+	return &mf->child_tab[(node << 1) + 0];
 }
 
 static inline pos_t *
-TEMPLATED(bt_left_child)(struct TEMPLATED(bt_matchfinder) *mf, pos_t node)
+TEMPLATED(bt_right_child)(struct TEMPLATED(bt_matchfinder) *mf, u32 node)
 {
-	return TEMPLATED(bt_child)(mf, node, 0);
+	return &mf->child_tab[(node << 1) + 1];
 }
 
-static inline pos_t *
-TEMPLATED(bt_right_child)(struct TEMPLATED(bt_matchfinder) *mf, pos_t node)
+static inline struct lz_match *
+TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * const restrict mf,
+					   const u8 * const restrict in_begin,
+					   const ptrdiff_t cur_pos,
+					   const u32 max_len,
+					   const u32 nice_len,
+					   const u32 max_search_depth,
+					   u32 * const restrict next_hash,
+					   u32 * const restrict best_len_ret,
+					   struct lz_match * restrict lz_matchptr,
+					   const bool record_matches)
 {
-	return TEMPLATED(bt_child)(mf, node, 1);
+	const u8 *in_next = in_begin + cur_pos;
+	u32 depth_remaining = max_search_depth;
+#ifdef BT_MATCHFINDER_HASH2_ORDER
+	u16 seq2;
+	u32 hash2;
+#endif
+	u32 hash3;
+	u32 cur_node;
+	const u8 *matchptr;
+	pos_t *pending_lt_ptr, *pending_gt_ptr;
+	u32 best_lt_len, best_gt_len;
+	u32 len;
+	u32 best_len;
+
+#ifdef BT_MATCHFINDER_HASH2_ORDER
+	best_len = 1;
+#else
+	best_len = 2;
+#endif
+
+	if (unlikely(max_len < LZ_HASH3_REQUIRED_NBYTES + 1)) {
+		*best_len_ret = best_len;
+		return lz_matchptr;
+	}
+
+	hash3 = *next_hash;
+	*next_hash = lz_hash(load_u24_unaligned(in_next + 1), BT_MATCHFINDER_HASH3_ORDER);
+
+#ifdef BT_MATCHFINDER_HASH2_ORDER
+	seq2 = load_u16_unaligned(in_next);
+	hash2 = lz_hash(seq2, BT_MATCHFINDER_HASH2_ORDER);
+	cur_node = mf->hash2_tab[hash2];
+	mf->hash2_tab[hash2] = cur_pos;
+	if (record_matches &&
+	    seq2 == load_u16_unaligned(&in_begin[cur_node]) &&
+	    likely(in_next != in_begin))
+	{
+		best_len = 2;
+		lz_matchptr->length = best_len;
+		lz_matchptr->offset = in_next - &in_begin[cur_node];
+		lz_matchptr++;
+	}
+#endif
+
+	cur_node = mf->hash3_tab[hash3];
+	mf->hash3_tab[hash3] = cur_pos;
+	prefetchw(&mf->hash3_tab[*next_hash]);
+
+	pending_lt_ptr = TEMPLATED(bt_left_child)(mf, cur_pos);
+	pending_gt_ptr = TEMPLATED(bt_right_child)(mf, cur_pos);
+
+	if (!cur_node) {
+		*pending_lt_ptr = 0;
+		*pending_gt_ptr = 0;
+		*best_len_ret = best_len;
+		return lz_matchptr;
+	}
+
+	best_lt_len = 0;
+	best_gt_len = 0;
+	len = 0;
+
+	for (;;) {
+		matchptr = &in_begin[cur_node];
+
+		if (matchptr[len] == in_next[len]) {
+			len = lz_extend(in_next, matchptr, len + 1,
+					(record_matches ? max_len : nice_len));
+			if (!record_matches || len > best_len) {
+				if (record_matches) {
+					best_len = len;
+					lz_matchptr->length = len;
+					lz_matchptr->offset = in_next - matchptr;
+					lz_matchptr++;
+				}
+				if (len >= nice_len) {
+					*pending_lt_ptr = *TEMPLATED(bt_left_child)(mf, cur_node);
+					*pending_gt_ptr = *TEMPLATED(bt_right_child)(mf, cur_node);
+					*best_len_ret = best_len;
+					return lz_matchptr;
+				}
+			}
+		}
+
+		if (matchptr[len] < in_next[len]) {
+			*pending_lt_ptr = cur_node;
+			pending_lt_ptr = TEMPLATED(bt_right_child)(mf, cur_node);
+			cur_node = *pending_lt_ptr;
+			best_lt_len = len;
+			if (best_gt_len < len)
+				len = best_gt_len;
+		} else {
+			*pending_gt_ptr = cur_node;
+			pending_gt_ptr = TEMPLATED(bt_left_child)(mf, cur_node);
+			cur_node = *pending_gt_ptr;
+			best_gt_len = len;
+			if (best_lt_len < len)
+				len = best_lt_len;
+		}
+
+		if (!cur_node || !--depth_remaining) {
+			*pending_lt_ptr = 0;
+			*pending_gt_ptr = 0;
+			*best_len_ret = best_len;
+			return lz_matchptr;
+		}
+	}
 }
 
 /*
@@ -161,92 +273,26 @@ TEMPLATED(bt_right_child)(struct TEMPLATED(bt_matchfinder) *mf, pos_t node)
  * array.  (If no matches were found, this will be the same as @lz_matchptr.)
  */
 static inline struct lz_match *
-TEMPLATED(bt_matchfinder_get_matches)(struct TEMPLATED(bt_matchfinder) * const restrict mf,
-				      const u8 * const in_begin,
-				      const u8 * const in_next,
-				      const unsigned min_len,
-				      const unsigned max_len,
-				      const unsigned nice_len,
-				      const unsigned max_search_depth,
-				      u32 * restrict next_hash,
-				      unsigned * restrict best_len_ret,
-				      struct lz_match * restrict lz_matchptr)
+TEMPLATED(bt_matchfinder_get_matches)(struct TEMPLATED(bt_matchfinder) *mf,
+				      const u8 *in_begin,
+				      ptrdiff_t cur_pos,
+				      u32 max_len,
+				      u32 nice_len,
+				      u32 max_search_depth,
+				      u32 *next_hash,
+				      u32 *best_len_ret,
+				      struct lz_match *lz_matchptr)
 {
-	unsigned depth_remaining = max_search_depth;
-	u32 hash;
-	pos_t cur_node;
-	const u8 *matchptr;
-	pos_t *pending_lt_ptr, *pending_gt_ptr;
-	unsigned best_lt_len, best_gt_len;
-	unsigned len;
-	unsigned best_len = min_len - 1;
-
-	if (unlikely(max_len < LZ_HASH3_REQUIRED_NBYTES + 1)) {
-		*best_len_ret = best_len;
-		return lz_matchptr;
-	}
-
-	hash = *next_hash;
-	*next_hash = bt_matchfinder_hash_3_bytes(in_next + 1);
-	cur_node = mf->hash_tab[hash];
-	mf->hash_tab[hash] = in_next - in_begin;
-	prefetchw(&mf->hash_tab[*next_hash]);
-
-	pending_lt_ptr = TEMPLATED(bt_left_child)(mf, in_next - in_begin);
-	pending_gt_ptr = TEMPLATED(bt_right_child)(mf, in_next - in_begin);
-	best_lt_len = 0;
-	best_gt_len = 0;
-	len = 0;
-
-	if (!cur_node) {
-		*pending_lt_ptr = 0;
-		*pending_gt_ptr = 0;
-		*best_len_ret = best_len;
-		return lz_matchptr;
-	}
-
-	for (;;) {
-		matchptr = &in_begin[cur_node];
-
-		if (matchptr[len] == in_next[len]) {
-			len = lz_extend(in_next, matchptr, len + 1, max_len);
-			if (len > best_len) {
-				best_len = len;
-				lz_matchptr->length = len;
-				lz_matchptr->offset = in_next - matchptr;
-				lz_matchptr++;
-				if (len >= nice_len) {
-					*pending_lt_ptr = *TEMPLATED(bt_left_child)(mf, cur_node);
-					*pending_gt_ptr = *TEMPLATED(bt_right_child)(mf, cur_node);
-					*best_len_ret = best_len;
-					return lz_matchptr;
-				}
-			}
-		}
-
-		if (matchptr[len] < in_next[len]) {
-			*pending_lt_ptr = cur_node;
-			pending_lt_ptr = TEMPLATED(bt_right_child)(mf, cur_node);
-			cur_node = *pending_lt_ptr;
-			best_lt_len = len;
-			if (best_gt_len < len)
-				len = best_gt_len;
-		} else {
-			*pending_gt_ptr = cur_node;
-			pending_gt_ptr = TEMPLATED(bt_left_child)(mf, cur_node);
-			cur_node = *pending_gt_ptr;
-			best_gt_len = len;
-			if (best_lt_len < len)
-				len = best_lt_len;
-		}
-
-		if (!cur_node || !--depth_remaining) {
-			*pending_lt_ptr = 0;
-			*pending_gt_ptr = 0;
-			*best_len_ret = best_len;
-			return lz_matchptr;
-		}
-	}
+	return TEMPLATED(bt_matchfinder_advance_one_byte)(mf,
+							  in_begin,
+							  cur_pos,
+							  max_len,
+							  nice_len,
+							  max_search_depth,
+							  next_hash,
+							  best_len_ret,
+							  lz_matchptr,
+							  true);
 }
 
 /*
@@ -274,76 +320,23 @@ TEMPLATED(bt_matchfinder_get_matches)(struct TEMPLATED(bt_matchfinder) * const r
  * actually record any matches.
  */
 static inline void
-TEMPLATED(bt_matchfinder_skip_position)(struct TEMPLATED(bt_matchfinder) * const restrict mf,
-					const u8 * const in_begin,
-					const u8 * const in_next,
-					const u8 * const in_end,
-					const unsigned nice_len,
-					const unsigned max_search_depth,
-					u32 * restrict next_hash)
+TEMPLATED(bt_matchfinder_skip_position)(struct TEMPLATED(bt_matchfinder) *mf,
+					const u8 *in_begin,
+					ptrdiff_t cur_pos,
+					u32 max_len,
+					u32 nice_len,
+					u32 max_search_depth,
+					u32 *next_hash)
 {
-	unsigned depth_remaining = max_search_depth;
-	u32 hash;
-	pos_t cur_node;
-	const u8 *matchptr;
-	pos_t *pending_lt_ptr, *pending_gt_ptr;
-	unsigned best_lt_len, best_gt_len;
-	unsigned len;
-
-	if (unlikely(in_end - in_next < LZ_HASH3_REQUIRED_NBYTES + 1))
-		return;
-
-	hash = *next_hash;
-	*next_hash = bt_matchfinder_hash_3_bytes(in_next + 1);
-	cur_node = mf->hash_tab[hash];
-	mf->hash_tab[hash] = in_next - in_begin;
-	prefetchw(&mf->hash_tab[*next_hash]);
-
-	depth_remaining = max_search_depth;
-	pending_lt_ptr = TEMPLATED(bt_left_child)(mf, in_next - in_begin);
-	pending_gt_ptr = TEMPLATED(bt_right_child)(mf, in_next - in_begin);
-	best_lt_len = 0;
-	best_gt_len = 0;
-	len = 0;
-
-	if (!cur_node) {
-		*pending_lt_ptr = 0;
-		*pending_gt_ptr = 0;
-		return;
-	}
-
-	for (;;) {
-		matchptr = &in_begin[cur_node];
-
-		if (matchptr[len] == in_next[len]) {
-			len = lz_extend(in_next, matchptr, len + 1, nice_len);
-			if (len == nice_len) {
-				*pending_lt_ptr = *TEMPLATED(bt_left_child)(mf, cur_node);
-				*pending_gt_ptr = *TEMPLATED(bt_right_child)(mf, cur_node);
-				return;
-			}
-		}
-
-		if (matchptr[len] < in_next[len]) {
-			*pending_lt_ptr = cur_node;
-			pending_lt_ptr = TEMPLATED(bt_right_child)(mf, cur_node);
-			cur_node = *pending_lt_ptr;
-			best_lt_len = len;
-			if (best_gt_len < len)
-				len = best_gt_len;
-		} else {
-			*pending_gt_ptr = cur_node;
-			pending_gt_ptr = TEMPLATED(bt_left_child)(mf, cur_node);
-			cur_node = *pending_gt_ptr;
-			best_gt_len = len;
-			if (best_lt_len < len)
-				len = best_lt_len;
-		}
-
-		if (!cur_node || !--depth_remaining) {
-			*pending_lt_ptr = 0;
-			*pending_gt_ptr = 0;
-			return;
-		}
-	}
+	u32 best_len;
+	TEMPLATED(bt_matchfinder_advance_one_byte)(mf,
+						   in_begin,
+						   cur_pos,
+						   max_len,
+						   nice_len,
+						   max_search_depth,
+						   next_hash,
+						   &best_len,
+						   NULL,
+						   false);
 }
