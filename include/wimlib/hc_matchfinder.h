@@ -49,15 +49,16 @@
  *
  *				Notes on usage
  *
- * You must define MATCHFINDER_MAX_WINDOW_ORDER before including this header
- * because that determines which integer type to use for positions.  Since
- * 16-bit integers are faster than 32-bit integers due to reduced memory usage
- * (and therefore reduced cache pressure), the code only uses 32-bit integers if
- * they are needed to represent all possible positions.
+ * Before including this header, you must define 'pos_t' to an integer type that
+ * can represent all possible positions.  This can be a 16-bit or 32-bit
+ * unsigned integer.  When possible, the former should be used due to the
+ * reduced cache pressure.  This header can be included multiple times in a
+ * single .c file with different 'pos_t' definitions; however, you must define a
+ * different MF_SUFFIX each time to generate different names for the matchfinder
+ * structure and functions.
  *
- * You must allocate the 'struct hc_matchfinder' on a
- * MATCHFINDER_ALIGNMENT-aligned boundary, and its necessary allocation size
- * must be gotten by calling hc_matchfinder_size().
+ * The needed allocation size of a 'struct hc_matchfinder' must be gotten by
+ * calling hc_matchfinder_size().
  *
  * ----------------------------------------------------------------------------
  *
@@ -101,29 +102,22 @@
  * ----------------------------------------------------------------------------
  */
 
-#ifndef _HC_MATCHFINDER_H
-#define _HC_MATCHFINDER_H
-
-#ifndef MATCHFINDER_MAX_WINDOW_ORDER
-#  error "MATCHFINDER_MAX_WINDOW_ORDER must be defined!"
-#endif
-
 #include <string.h>
 
 #include "wimlib/lz_extend.h"
 #include "wimlib/lz_hash.h"
 #include "wimlib/unaligned.h"
 
-#if MATCHFINDER_MAX_WINDOW_ORDER <= 16
-typedef u16 pos_t;
-#else
-typedef u32 pos_t;
-#endif
-
+#undef HC_MATCHFINDER_HASH3_ORDER
 #define HC_MATCHFINDER_HASH3_ORDER	14
+
+#undef HC_MATCHFINDER_HASH4_ORDER
 #define HC_MATCHFINDER_HASH4_ORDER	15
 
-struct hc_matchfinder {
+#undef TEMPLATED
+#define TEMPLATED(name)		CONCAT(name, MF_SUFFIX)
+
+struct TEMPLATED(hc_matchfinder) {
 	pos_t hash3_tab[1UL << HC_MATCHFINDER_HASH3_ORDER];
 	pos_t hash4_tab[1UL << HC_MATCHFINDER_HASH4_ORDER];
 	pos_t next_tab[];
@@ -132,14 +126,15 @@ struct hc_matchfinder {
 /* Return the number of bytes that must be allocated for a 'hc_matchfinder' that
  * can work with buffers up to the specified size.  */
 static inline size_t
-hc_matchfinder_size(size_t max_bufsize)
+TEMPLATED(hc_matchfinder_size)(size_t max_bufsize)
 {
-	return sizeof(struct hc_matchfinder) + (max_bufsize * sizeof(pos_t));
+	return sizeof(struct TEMPLATED(hc_matchfinder)) +
+		(max_bufsize * sizeof(pos_t));
 }
 
 /* Prepare the matchfinder for a new input buffer.  */
 static inline void
-hc_matchfinder_init(struct hc_matchfinder *mf)
+TEMPLATED(hc_matchfinder_init)(struct TEMPLATED(hc_matchfinder) *mf)
 {
 	memset(mf, 0, sizeof(*mf));
 }
@@ -174,15 +169,15 @@ hc_matchfinder_init(struct hc_matchfinder *mf)
  * 'best_len' was found.
  */
 static inline u32
-hc_matchfinder_longest_match(struct hc_matchfinder * const restrict mf,
-			     const u8 * const restrict in_begin,
-			     const ptrdiff_t cur_pos,
-			     u32 best_len,
-			     const u32 max_len,
-			     const u32 nice_len,
-			     const u32 max_search_depth,
-			     u32 next_hashes[const restrict static 2],
-			     u32 * const restrict offset_ret)
+TEMPLATED(hc_matchfinder_longest_match)(struct TEMPLATED(hc_matchfinder) * const restrict mf,
+					const u8 * const restrict in_begin,
+					const ptrdiff_t cur_pos,
+					u32 best_len,
+					const u32 max_len,
+					const u32 nice_len,
+					const u32 max_search_depth,
+					u32 next_hashes[const restrict static 2],
+					u32 * const restrict offset_ret)
 {
 	const u8 *in_next = in_begin + cur_pos;
 	u32 depth_remaining = max_search_depth;
@@ -325,12 +320,12 @@ out:
  * Returns @in_next + @count.
  */
 static inline const u8 *
-hc_matchfinder_skip_positions(struct hc_matchfinder * const restrict mf,
-			      const u8 * const restrict in_begin,
-			      const ptrdiff_t cur_pos,
-			      const ptrdiff_t end_pos,
-			      const u32 count,
-			      u32 next_hashes[const restrict static 2])
+TEMPLATED(hc_matchfinder_skip_positions)(struct TEMPLATED(hc_matchfinder) * const restrict mf,
+					 const u8 * const restrict in_begin,
+					 const ptrdiff_t cur_pos,
+					 const ptrdiff_t end_pos,
+					 const u32 count,
+					 u32 next_hashes[const restrict static 2])
 {
 	const u8 *in_next = in_begin + cur_pos;
 	const u8 * const stop_ptr = in_next + count;
@@ -361,5 +356,3 @@ hc_matchfinder_skip_positions(struct hc_matchfinder * const restrict mf,
 
 	return stop_ptr;
 }
-
-#endif /* _HC_MATCHFINDER_H */

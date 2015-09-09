@@ -104,4 +104,7 @@
 #  define STATIC_ASSERT(expr)	((void)sizeof(char[1 - 2 * !(expr)]))
 #endif
 
+#define CONCAT2(s1, s2)		s1##s2
+#define CONCAT(s1, s2)		CONCAT2(s1, s2)
+
 #endif /* _WIMLIB_COMPILER_H */
